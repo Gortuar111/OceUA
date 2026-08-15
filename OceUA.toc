@@ -1,0 +1,74 @@
+## Interface: 11200
+## Title: |cffb266ffOce|rUA
+## Notes: UA-переклади: квести, діалоги, книги, скіли, предмети | /oceua
+## Author: Oce
+## Version: 1.4.7
+## DefaultState: enabled
+## SavedVariables: OceUA_Settings, OceBookUA_Settings, OceBookUA_Pending, OceGossipUA_Settings, OceGossipUA_Pending, OceQuestUA_Settings
+
+## ---- Спільні налаштування ----
+ConfigUA.lua
+
+## ---- Основні бази ----
+Data\Book_Translations.lua
+Data\Gossip_Translations.lua
+Data\Quest_Translations.lua
+Data\Skill_Dictionary.lua
+Data\Recipes_Dictionary.lua
+Data\Reputation_Dictionary.lua
+Data\Items_Dictionary.lua
+
+## ---- NPC / моби / об'єкти (дані, без окремих тумблерів) ----
+Data\Names_npc.lua
+Data\Mobs.lua
+Data\Objects.lua
+Data\Signs_Zone.lua
+Data\Unsorted.lua
+
+## ---- Item tooltip modules (MonoLingo) ----
+Data\ItemTooltipModules\Item_Stats.lua
+Data\ItemTooltipModules\Item_Equip_Slots.lua
+Data\ItemTooltipModules\Item_Types.lua
+Data\ItemTooltipModules\Item_Fixed_Labels.lua
+Data\ItemTooltipModules\Item_Stance_Requirements.lua
+Data\ItemTooltipModules\Item_Enchants_Temp.lua
+Data\ItemTooltipModules\Consumable_Descriptions.lua
+Data\ItemTooltipModules\Flavor_Text.lua
+Data\ItemTooltipModules\Misc_Tooltip_Lines.lua
+Data\ItemTooltipModules\Tooltip_UI_Strings.lua
+Data\ItemTooltipModules\Tool_Names.lua
+Data\ItemTooltipModules\Junk_Test_Entries.lua
+
+## ---- Profession / holiday / challenges ----
+Data\ProfessionMisc\Profession_Ranks.lua
+Data\ProfessionMisc\Profession_Names.lua
+Data\ProfessionMisc\Profession_Level_Requirements.lua
+Data\ProfessionMisc\Pet_Skills.lua
+Data\ProfessionMisc\challenges.lua
+Data\ProfessionMisc\holiday.lua
+
+## ---- SkillModules Mono ----
+Data\SkillModules\skill_lines.lua
+Data\SkillModules\Talent_Names.lua
+Data\SkillModules\Talent_Trees.lua
+Data\SkillModules\Class_Names.lua
+Data\SkillModules\Race_Names.lua
+Data\SkillModules\Class_Labels_Full.lua
+
+## ---- SkillModules Oce (формат SkillUA) ----
+Data\SkillModules\item_tooltip.lua
+Data\SkillModules\talents.lua
+Data\SkillModules\professions.lua
+Data\SkillModules\tooltip_extras.lua
+Data\SkillModules\challenges.lua
+Data\SkillModules\holiday.lua
+
+## ---- Міст імен Mono → Oce ----
+Data\Bridge_MonoLingo.lua
+
+## ---- Модулі коду ----
+BookUA.lua
+GossipUA.lua
+QuestUA.lua
+SkillUA.lua
+UnitUA.lua
