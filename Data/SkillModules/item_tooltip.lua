@@ -67,6 +67,7 @@ OceUA_ITEM_STAT = {
   ["Spell Power"] = "до сили заклинань",
   ["Healing"] = "до зцілення",
   ["Healing Power"] = "до сили зцілення",
+  ["Healing Spells"] = "до зцілення заклинань",
   ["Damage and Healing Spells"] = "до шкоди й зцілення заклинань",
   ["Damage to Spells"] = "до шкоди заклинань",
   ["Weapon Damage"] = "до шкоди зброї",
