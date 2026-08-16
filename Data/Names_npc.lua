@@ -7347,4 +7347,12 @@ OceUA_NPC_Names_Dictionary = {
   ["Ancient of War"] = "Стародавній воїн",
   ["Dungar Longdrink"] = "Дангар Лонгдрінк",
   ["BBPR Pollster"] = "Опитувач BBPR",
+  ["Kelton Clemons"] = "Келтон Клемонс",
+  ["Shivertail"] = "Дрижко",
+  ["Ol' Reinald Osworth"] = "Старий Рейнальд Осворт",
+  ["Gina Weller"] = "Джина Веллер",
+  ["Tabetha Wildberry"] = "Табета Дикоягід",
+  ["Krennan Wildberry"] = "Креннан Дикоягід",
+  ["Mortimer Stansfield"] = "Мортімер Стенфілд",
+  ["Betty"] = "Бетті",
 }

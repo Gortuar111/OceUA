@@ -146,38 +146,64 @@ local function SubRaceClass(text)
   return text
 end
 
--- нормалізація апострофа (ASCII / Unicode)
-local function NormApos(s)
+local function StripCodes(s)
   if not s then return s end
-  s = string.gsub(s, "\226\128\153", "'") -- ’
-  s = string.gsub(s, "\226\128\152", "'") -- ‘
-  s = string.gsub(s, "`", "'")
+  s = string.gsub(s, "|c%x%x%x%x%x%x%x%x", "")
+  s = string.gsub(s, "|r", "")
+  s = string.gsub(s, "|H.-|h(.-)|h", "%1")
+  s = string.gsub(s, "|T.-|t", "")
   return s
 end
 
+local function NormApos(s)
+  if not s then return s end
+  s = string.gsub(s, "\226\128\153", "'")
+  s = string.gsub(s, "\226\128\152", "'")
+  s = string.gsub(s, "\226\128\154", "'")
+  s = string.gsub(s, "`", "'")
+  s = string.gsub(s, "\194\180", "'")
+  return s
+end
+
+local KIND_UA = {
+  Pet = "Улюбленець",
+  Minion = "Прислужник",
+  Guardian = "Охоронець",
+  Ward = "Охорона",
+  Companion = "Супутник",
+}
+
 local function TranslatePetOwnerLine(text)
+  if not text or text == "" then return nil end
+  text = StripCodes(text)
   text = NormApos(text)
-  -- Nickname's Pet / Minion / Guardian / Ward
-  local _, _, owner, kind = string.find(text, "^(.+)'s (Pet|Minion|Guardian|Ward)$")
-  if owner and kind then
-    local kindUA = ({
-      Pet = "Улюбленець",
-      Minion = "Прислужник",
-      Guardian = "Охоронець",
-      Ward = "Охорона",
-    })[kind] or kind
-    return kindUA .. " " .. owner
+  text = string.gsub(text, "^%s+", "")
+  text = string.gsub(text, "%s+$", "")
+
+  -- Lua 5.0: НЕМАЄ | в pattern — перевіряємо кожен kind окремо
+  local kinds = { "Pet", "Minion", "Guardian", "Ward", "Companion" }
+  local ki
+  for ki = 1, table.getn(kinds) do
+    local kind = kinds[ki]
+    local pat = "(.+)'s " .. kind .. "%s*$"
+    local _, _, owner = string.find(text, pat)
+    if owner and KIND_UA[kind] then
+      owner = string.gsub(owner, "^%s+", "")
+      owner = string.gsub(owner, "%s+$", "")
+      if string.len(owner) >= 1 and string.len(owner) < 48 then
+        return KIND_UA[kind] .. " " .. owner
+      end
+    end
+    -- "Pet of Owner"
+    local pat2 = "^" .. kind .. " of (.+)$"
+    local _, _, owner2 = string.find(text, pat2)
+    if owner2 and KIND_UA[kind] then
+      return KIND_UA[kind] .. " " .. owner2
+    end
   end
-  -- Pet of Nickname (рідше)
-  local _, _, kind2, owner2 = string.find(text, "^(Pet|Minion|Guardian) of (.+)$")
-  if kind2 and owner2 then
-    local kindUA = ({
-      Pet = "Улюбленець",
-      Minion = "Прислужник",
-      Guardian = "Охоронець",
-    })[kind2] or kind2
-    return kindUA .. " " .. owner2
-  end
+
+  if text == "Pet" then return "Улюбленець" end
+  if text == "Minion" then return "Прислужник" end
   return nil
 end
 
@@ -352,6 +378,7 @@ local function HookOnShow(tip)
   local old = tip:GetScript("OnShow")
   tip:SetScript("OnShow", function()
     if old then old() end
+    this._OceUA_PetPass = 0
     local isItem = false
     if tip.GetItem then
       local ok, name = pcall(function() return tip:GetItem() end)
@@ -359,6 +386,22 @@ local function HookOnShow(tip)
     end
     if not isItem then
       pcall(TranslateTip, tip)
+    end
+  end)
+  local oldUp = tip:GetScript("OnUpdate")
+  tip:SetScript("OnUpdate", function()
+    if oldUp then oldUp() end
+    if not this:IsVisible() then return end
+    local pass = this._OceUA_PetPass or 0
+    if pass >= 5 then return end
+    this._OceUA_PetPass = pass + 1
+    local isItem = false
+    if this.GetItem then
+      local ok, name = pcall(function() return this:GetItem() end)
+      if ok and name then isItem = true end
+    end
+    if not isItem then
+      pcall(TranslateTip, this)
     end
   end)
 end

@@ -16,6 +16,7 @@ OceUA_Race_Names = {
   ["Night Elf"] = "Нічний ельф",
   ["High Elf"] = "Високий ельф",
   ["Orc"] = "Орк",
+  ["Goblin"] = "Гоблін",
   ["Tauren"] = "Таурен",
   ["Troll"] = "Троль",
   ["Undead"] = "Нежить",
