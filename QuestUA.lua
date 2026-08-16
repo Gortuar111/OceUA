@@ -739,6 +739,256 @@ local function HookPanel(panelName, translateFunc)
     end
 end
 
+
+-- ========== Quest Log (журнал квестів) ==========
+local function GetSelectedLogTitle()
+    if not GetQuestLogSelection or not GetQuestLogTitle then return nil, nil end
+    local sel = GetQuestLogSelection()
+    if not sel or sel < 1 then return nil, nil end
+    local qt, level = GetQuestLogTitle(sel)
+    if not qt then return nil, nil end
+    qt = string.gsub(qt, "%s*%-%s*%([^%)]+%)%s*$", "")
+    qt = string.gsub(qt, "%s*%([^%)]+%)%s*$", "")
+    return qt, level
+end
+
+local LOG_TAGS = {
+    ["(Complete)"] = "(Виконано)",
+    ["(Failed)"] = "(Провалено)",
+    ["(Dungeon)"] = "(Підземелля)",
+    ["(Elite)"] = "(Елітний)",
+    ["(Raid)"] = "(Рейд)",
+    ["(PvP)"] = "(PvP)",
+    ["(Group)"] = "(Група)",
+    ["(Daily)"] = "(Щоденний)",
+    ["(Heroic)"] = "(Героїчний)",
+}
+
+local function TranslateLogTag(s)
+    if not s then return s end
+    if LOG_TAGS[s] then return LOG_TAGS[s] end
+    s = string.gsub(s, "%(Complete%)", "(Виконано)")
+    s = string.gsub(s, "%(Failed%)", "(Провалено)")
+    s = string.gsub(s, "%(Dungeon%)", "(Підземелля)")
+    s = string.gsub(s, "%(Elite%)", "(Елітний)")
+    s = string.gsub(s, "%(Raid%)", "(Рейд)")
+    s = string.gsub(s, "%(PvP%)", "(PvP)")
+    s = string.gsub(s, "%(Group%)", "(Група)")
+    return s
+end
+
+-- пошук UA для фрагмента (моб / предмет / NPC / об'єкт)
+local function LookupWorldName(en)
+    if not en or en == "" then return nil end
+    local d, ua
+    d = OceUA_Item_Dictionary
+    if d and d[en] and d[en] ~= "" then return d[en] end
+    d = OceUA_Mobs_Dictionary
+    if d and d[en] and d[en] ~= "" then return d[en] end
+    d = OceUA_NPC_Names_Dictionary
+    if d and d[en] and d[en] ~= "" then return d[en] end
+    d = OceUA_Objects_Dictionary
+    if d and d[en] and d[en] ~= "" then return d[en] end
+    return nil
+end
+
+-- у рядку цілі замінити відомі EN-назви (довші першими не сортуємо масово —
+-- простий прохід: якщо весь рядок без лічильника збігається; або "Name: 0/10")
+local function TranslateObjectiveLine(text)
+    if not text or text == "" then return text end
+    if string.find(text, "[А-Яа-яІіЇїЄєҐґ]") then return text end
+
+    -- "Something: 3/10" або "Something slain: 0/5"
+    local _, _, name, rest = string.find(text, "^(.+):%s*(%d+/%d+)%s*$")
+    if name and rest then
+        local ua = LookupWorldName(name)
+        if ua then return ua .. ": " .. rest end
+        -- інколи "Name slain"
+        local _, _, base = string.find(name, "^(.+) slain$")
+        if base then
+            ua = LookupWorldName(base)
+            if ua then return ua .. " (убито): " .. rest end
+        end
+        return text
+    end
+
+    -- повний збіг
+    local ua = LookupWorldName(text)
+    if ua then return ua end
+    return text
+end
+
+local function TranslateQuestLogDetails()
+    if OceUA_IsEnabled and not OceUA_IsEnabled("quest") then return end
+    if not showUA then return end
+    if not QuestLogFrame or not QuestLogFrame:IsVisible() then return end
+
+    local title, qlevel = GetSelectedLogTitle()
+    if not title or title == "" then return end
+
+    local tr = FindTranslation(title)
+
+    -- заголовок + рівень завжди (навіть без повного перекладу — рівень з клієнта)
+    if QuestLogQuestTitle then
+        local display
+        if tr and tr.T then
+            display = FormatQuestText(tr.T)
+        else
+            display = title
+        end
+        if qlevel and tonumber(qlevel) and tonumber(qlevel) > 0 then
+            display = display .. " [" .. tostring(qlevel) .. "]"
+        end
+        if IsCurrentQuestFailed and IsCurrentQuestFailed() then
+            display = display .. " - (Провалено)"
+        end
+        QuestLogQuestTitle:SetText(display)
+    end
+
+    if tr then
+        if tr.O and QuestLogObjectivesText then
+            SafeSetText(QuestLogObjectivesText, tr.O)
+        end
+        if tr.D and QuestLogQuestDescription then
+            SafeSetText(QuestLogQuestDescription, tr.D)
+        end
+    end
+
+    -- рядки прогресу цілей (моб/предмет якщо є в базі)
+    if GetNumQuestLeaderBoards then
+        local nobj = GetNumQuestLeaderBoards() or 0
+        local i
+        for i = 1, nobj do
+            local fs = getglobal("QuestLogObjective" .. i)
+            if fs then
+                local text, otype, finished = GetQuestLogLeaderBoard(i)
+                if text then
+                    local ua = TranslateObjectiveLine(text)
+                    if ua then fs:SetText(ua) end
+                end
+            end
+        end
+    end
+
+    -- нагороди: назви предметів на кнопках
+    local ri
+    for ri = 1, 10 do
+        local btn = getglobal("QuestLogItem" .. ri)
+        if btn then
+            local nameFS = getglobal("QuestLogItem" .. ri .. "Name")
+            if not nameFS and btn.Name then nameFS = btn.Name end
+            if nameFS then
+                local iname = nameFS:GetText()
+                if iname and not string.find(iname, "[А-Яа-яІіЇїЄєҐґ]") then
+                    local ua = LookupWorldName(iname)
+                    if ua then nameFS:SetText(ua) end
+                end
+            end
+        end
+    end
+
+    if QuestLogDescriptionTitle then
+        QuestLogDescriptionTitle:SetText("Опис")
+    end
+    if QuestLogRewardTitleText then
+        QuestLogRewardTitleText:SetText("Нагороди")
+    end
+    if QuestLogItemChooseText then
+        local tx = QuestLogItemChooseText:GetText()
+        if tx and string.find(tx, "Choose") then
+            QuestLogItemChooseText:SetText("Оберіть нагороду:")
+        end
+    end
+    if QuestLogItemReceiveText then
+        local tx = QuestLogItemReceiveText:GetText()
+        if tx and (string.find(tx, "receive") or string.find(tx, "Receive") or string.find(tx, "Rewards") or string.find(tx, "will receive")) then
+            QuestLogItemReceiveText:SetText("Ви отримаєте:")
+        end
+    end
+    if QuestLogTitleText then
+        QuestLogTitleText:SetText("Журнал квестів")
+    end
+end
+
+local function TranslateQuestLogList()
+    if OceUA_IsEnabled and not OceUA_IsEnabled("quest") then return end
+    if not showUA then return end
+    if not GetNumQuestLogEntries or not GetQuestLogTitle then return end
+
+    local n = GetNumQuestLogEntries()
+    local i
+    for i = 1, n do
+        local qt, level, tag, isHeader = GetQuestLogTitle(i)
+        if qt and not isHeader then
+            local clean = string.gsub(qt, "%s*%-%s*%([^%)]+%)%s*$", "")
+            clean = string.gsub(clean, "%s*%([^%)]+%)%s*$", "")
+            local tr = FindTranslation(clean)
+            local btn = getglobal("QuestLogTitle" .. i)
+            if not btn then btn = getglobal("QuestLogTitleButton" .. i) end
+            if btn then
+                local label = clean
+                if tr and tr.T then
+                    label = FormatQuestText(tr.T)
+                end
+                -- рівень біля назви в списку
+                if level and tonumber(level) and tonumber(level) > 0 then
+                    label = "[" .. tostring(level) .. "] " .. label
+                end
+                local nt = getglobal((btn:GetName() or "") .. "NormalText")
+                if nt then
+                    nt:SetText(label)
+                elseif btn.SetText then
+                    btn:SetText(label)
+                end
+            end
+            local tagFS = getglobal("QuestLogTitle" .. i .. "Tag")
+            if not tagFS then tagFS = getglobal("QuestLogTitleButton" .. i .. "Tag") end
+            if tagFS then
+                local tg = tagFS:GetText()
+                if tg then
+                    local ua = TranslateLogTag(tg)
+                    if ua and ua ~= tg then tagFS:SetText(ua) end
+                end
+            end
+        end
+    end
+end
+
+local function TranslateQuestLog()
+    if OceUA_IsEnabled and not OceUA_IsEnabled("quest") then return end
+    TranslateQuestLogList()
+    TranslateQuestLogDetails()
+end
+
+-- без затримки = без блимання EN→UA; клієнт уже намалював кадр — одразу перебиваємо
+local function ScheduleQuestLogTranslate()
+    if not QuestLogFrame or not QuestLogFrame:IsVisible() then return end
+    pcall(TranslateQuestLog)
+end
+
+if QuestLogFrame then
+    local oldQLShow = QuestLogFrame:GetScript("OnShow")
+    QuestLogFrame:SetScript("OnShow", function()
+        if oldQLShow then oldQLShow() end
+        ScheduleQuestLogTranslate()
+    end)
+end
+
+if type(QuestLog_UpdateQuestDetails) == "function" then
+    local _oldDetails = QuestLog_UpdateQuestDetails
+    QuestLog_UpdateQuestDetails = function(a1, a2, a3, a4)
+        _oldDetails(a1, a2, a3, a4)
+        ScheduleQuestLogTranslate()
+    end
+end
+if type(QuestLog_Update) == "function" then
+    local _oldQLU = QuestLog_Update
+    QuestLog_Update = function(a1, a2, a3, a4)
+        _oldQLU(a1, a2, a3, a4)
+        ScheduleQuestLogTranslate()
+    end
+end
+
 HookPanel("QuestFrameDetailPanel", TranslateDetail)
 HookPanel("QuestFrameProgressPanel", TranslateProgress)
 HookPanel("QuestFrameRewardPanel", TranslateReward)
@@ -748,6 +998,7 @@ f:RegisterEvent("QUEST_DETAIL")
 f:RegisterEvent("QUEST_PROGRESS")
 f:RegisterEvent("QUEST_COMPLETE")
 f:RegisterEvent("QUEST_FINISHED")
+f:RegisterEvent("QUEST_LOG_UPDATE")
 f:RegisterEvent("ADDON_LOADED")
 f:RegisterEvent("PLAYER_LOGIN")
 
@@ -764,6 +1015,10 @@ f:SetScript("OnEvent", function()
     if event == "QUEST_FINISHED" then
         btn:Hide()
         idBtn:Hide()
+        return
+    end
+    if event == "QUEST_LOG_UPDATE" then
+        ScheduleQuestLogTranslate()
         return
     end
     if event == "QUEST_DETAIL" then
