@@ -25,9 +25,10 @@ end
 local function LookupName(en)
   if not en or en == "" then return nil end
   local d
-  d = OceUA_NPC_Names_Dictionary
-  if d and d[en] and d[en] ~= "" then return d[en] end
+  -- спочатку Mobs (бойові), потім NPC — один канонічний переклад
   d = OceUA_Mobs_Dictionary
+  if d and d[en] and d[en] ~= "" then return d[en] end
+  d = OceUA_NPC_Names_Dictionary
   if d and d[en] and d[en] ~= "" then return d[en] end
   d = OceUA_Objects_Dictionary
   if d and d[en] and d[en] ~= "" then return d[en] end

@@ -26444,4 +26444,5 @@ OceSkillUA_Dictionary = {
   ["Tea"] = "Чай",
   ["Use"] = "Використання",
   ["Web"] = "Веб",
+  ["You have died."] = "Ти мертвий.",
 }

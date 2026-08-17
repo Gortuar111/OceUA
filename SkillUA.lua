@@ -25,7 +25,7 @@
 ]]
 
 local ADDON_NAME = "OceUA"
-local VERSION = "1.6.6"
+local VERSION = "1.6.7"
 
 -- налаштування скілів
 -- з 1.2.0 основне джерело — OceUA_Settings (/oceua);
@@ -1744,16 +1744,110 @@ end
 -- ============================================================
 -- Class Trainer detail panel (нижня частина вікна)
 -- ============================================================
+local function TranslateRequiresLevelText(text)
+  if not text or text == "" then return text, false end
+  if HasCyrillic and HasCyrillic(text) then
+    -- частковий: "Потрібно: Level 16"
+    local n = text
+    n = string.gsub(n, "Level%s*(%d+)", "рівень %1")
+    n = string.gsub(n, "Requires%s+", "Потрібно: ")
+    if n ~= text then return n, true end
+    return text, false
+  end
+  local n = text
+  n = string.gsub(n, "^Requires Level%s*(%d+)", "Потрібно: рівень %1")
+  n = string.gsub(n, "^Requires%s+", "Потрібно: ")
+  n = string.gsub(n, "Level%s*(%d+)", "рівень %1")
+  if n ~= text then return n, true end
+  return text, false
+end
+
+local function ProcessTrainerList()
+  if not ClassTrainerFrame or not ClassTrainerFrame:IsVisible() then return end
+  -- 1.12: ClassTrainerSkill1..N
+  local max = 11
+  if CLASS_TRAINER_SKILLS_DISPLAYED then max = CLASS_TRAINER_SKILLS_DISPLAYED end
+  local i
+  for i = 1, max do
+    local btn = getglobal("ClassTrainerSkill" .. i)
+    if btn and btn.IsVisible and btn:IsVisible() then
+      local fs = getglobal("ClassTrainerSkill" .. i .. "Text")
+      if not fs and btn.GetFontString then fs = btn:GetFontString() end
+      if fs then
+        TranslateFontString(fs)
+      elseif btn.GetText and btn.SetText then
+        local t = btn:GetText()
+        if t and t ~= "" and not (HasCyrillic and HasCyrillic(t)) then
+          -- прибрати rank суфікс для пошуку
+          local base = string.gsub(t, "%s*%(.*%)%s*$", "")
+          base = string.gsub(base, "%s+$", "")
+          local ua = nil
+          if OceUA_Skill_Dictionary and OceUA_Skill_Dictionary[base] then
+            ua = OceUA_Skill_Dictionary[base]
+          elseif OceUA_Skill_Dictionary and OceUA_Skill_Dictionary[t] then
+            ua = OceUA_Skill_Dictionary[t]
+          end
+          if ua then
+            -- зберегти (Rank N) якщо був
+            local _, _, rank = string.find(t, "(%(.*%))%s*$")
+            if rank then
+              btn:SetText(ua .. "  " .. rank)
+            else
+              btn:SetText(ua)
+            end
+          end
+        end
+      end
+    end
+  end
+  -- заголовки секцій (Fury / Protection)
+  for i = 1, max do
+    local btn = getglobal("ClassTrainerSkill" .. i)
+    if btn and btn.GetText then
+      local t = btn:GetText()
+      if t and (t == "Fury" or t == "Protection" or t == "Arms" or t == "Combat"
+        or t == "Subtlety" or t == "Assassination" or t == "Discipline"
+        or t == "Holy" or t == "Shadow" or t == "Elemental" or t == "Enhancement"
+        or t == "Restoration" or t == "Affliction" or t == "Demonology" or t == "Destruction"
+        or t == "Arcane" or t == "Fire" or t == "Frost" or t == "Balance" or t == "Feral Combat") then
+        if OceUA_Skill_Dictionary and OceUA_Skill_Dictionary[t] then
+          btn:SetText(OceUA_Skill_Dictionary[t])
+        end
+      end
+    end
+  end
+end
+
 local function ProcessTrainerDetails()
   if not SkillEnabled() then return end
   if not ClassTrainerFrame or not ClassTrainerFrame:IsVisible() then return end
 
+  ProcessTrainerList()
+
   TranslateFontString(ClassTrainerSkillName)
-  TranslateFontString(ClassTrainerSkillRequirements)
+  -- requirements: Level N
+  if ClassTrainerSkillRequirements then
+    local rt = ClassTrainerSkillRequirements:GetText()
+    if rt then
+      local n, ok = TranslateRequiresLevelText(rt)
+      if ok then
+        ClassTrainerSkillRequirements:SetText(n)
+      else
+        TranslateFontString(ClassTrainerSkillRequirements)
+      end
+    end
+  end
   TranslateFontString(ClassTrainerSkillDescription)
-  -- підпис Cost: теж можна
   if ClassTrainerCostLabel then
     TranslateFontString(ClassTrainerCostLabel)
+  end
+  -- Cost:
+  local costFS = getglobal("ClassTrainerCostLabel")
+  if costFS then
+    local ct = costFS:GetText()
+    if ct and (ct == "Cost:" or ct == "Cost") then
+      costFS:SetText("Вартість:")
+    end
   end
 end
 
@@ -2218,6 +2312,13 @@ end
 -- ============================================================
 local function HookFrames()
   -- Class Trainer: коли вибирають скіл
+  if ClassTrainer_Update then
+    local oldUpd = ClassTrainer_Update
+    ClassTrainer_Update = function(a1, a2, a3, a4)
+      oldUpd(a1, a2, a3, a4)
+      if SkillEnabled() then ProcessTrainerDetails() end
+    end
+  end
   if ClassTrainer_SetSelection then
     local old = ClassTrainer_SetSelection
     ClassTrainer_SetSelection = function(id)

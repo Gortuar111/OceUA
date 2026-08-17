@@ -7,7 +7,7 @@
   Lua 5.0 / WoW 1.12 — без string.match / table.pack тощо.
 ]]
 
-local VERSION = "1.6.6"
+local VERSION = "1.6.7"
 
 OceUA_Settings = OceUA_Settings or {
     enabled      = true,
