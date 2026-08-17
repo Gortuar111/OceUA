@@ -12,7 +12,6 @@ OceUA_challenges = {
   ["Active Challenges:"] = "Активні випробування:",
   ["Active Challenges"] = "Активні випробування",
   ["Challenges"] = "Випробування",
-  ["Challenge"] = "Випробування",
   ["Challenge Mode"] = "Режим випробування",
   ["No active challenges."] = "Немає активних випробувань.",
   ["No active challenges"] = "Немає активних випробувань",
@@ -72,7 +71,7 @@ OceUA_challenges = {
   ["[Aura] Together Forever"] = "[Аура] Разом назавжди",
   
   -- ===== Описи =====
-  ["PvP is enabled. You may disable it at any time, but doing so permanently removes War Mode for this character. While active: experience gain from all sources is increased by 15%, and killing players in the open world grants experience.ndeavor"] = "Бойовий режим увімкнено. Ви можете вимкнути його будь-коли, але після цього Бойовий режим буде назавжди видалено для цього персонажа. Поки він активний, отримання досвіду з усіх джерел збільшено на 15%, а за вбивство гравців у відкритому світі ви отримуєте досвід.",
+  ["PvP is enabled. You may disable it at any time, but doing so permanently removes War Mode for this character. While active: experience gain from all sources is increased by 15%, and killing players in the open world grants experience."] = "Бойовий режим увімкнено. Ви можете вимкнути його будь-коли, але після цього Бойовий режим буде назавжди видалено для цього персонажа. Поки він активний, отримання досвіду з усіх джерел збільшено на 15%, а за вбивство гравців у відкритому світі ви отримуєте досвід.",
   ["No longer gaining rested experience, but your weapon skill gain will be doubled."] = "Ви більше не отримуєте досвід відпочинку, але приріст навичок володіння зброєю буде подвоєно.",
   ["Gaining 50% fewer experience points from defeating enemies. Lose 5% of accumulated experience from current level upon being defeated by enemies."] = "Ви отримуєте на 50% менше досвіду за перемогу над ворогами. У разі загибелі від ворогів ви втрачаєте 5% накопиченого досвіду поточного рівня.",
   ["During this challenge, you will earn exclusive titles while staying at level one."] = "Під час цього випробування ви отримуватимете унікальні титули, залишаючись на першому рівні.",

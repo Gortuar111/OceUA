@@ -25,7 +25,7 @@
 ]]
 
 local ADDON_NAME = "OceUA"
-local VERSION = "1.6.7"
+local VERSION = "1.7.0"
 
 -- налаштування скілів
 -- з 1.2.0 основне джерело — OceUA_Settings (/oceua);
@@ -228,6 +228,67 @@ local function SoftExactKey(text)
   return t
 end
 
+-- М'який ключ: усі числа → # (масовий матч описів з підставленими рангами)
+local softNormUA = {}
+local softNormCount = 0
+
+local CHALLENGE_UA_FIX = {
+  ["Подорож Вагранта"] = "Подвиг мандрівника",
+  ["Похід Варганта"] = "Подвиг мандрівника",
+  ["Пригода з бурінням"] = "Свиняча пригода",
+  ["Пригода на борту"] = "Свиняча пригода",
+  ["Божевільний першого рівня"] = "Божевільний 1 рівня",
+  ["Шлях майстра пивоваріння"] = "Шлях пивовара",
+  ["Мандрівний майстер-ремісник"] = "Мандрівний майстер ремесел",
+}
+
+
+local function SoftNormKey(text)
+  if not text then return "" end
+  local t = SoftExactKey(text)
+  -- $плейсхолдери теж у #
+  t = string.gsub(t, "%$[lLgG][^%s;]*;?", "#")
+  t = string.gsub(t, "%$%b{}", "#")
+  t = string.gsub(t, "%$[%*/]?[%d]+[;/][%w%%%./]+", "#")
+  t = string.gsub(t, "%$%d+[a-zA-Z][%d%%]*", "#")
+  t = string.gsub(t, "%$[a-zA-Z][%d]*%%?", "#")
+  t = string.gsub(t, "%$%d+%%", "#")
+  t = string.gsub(t, "%$[%w:;%%/%.%*%{%}%-]+", "#")
+  t = string.gsub(t, "%d+%.%d+%%", "#")
+  t = string.gsub(t, "%d+%%", "#")
+  t = string.gsub(t, "%d+%.%d+", "#")
+  t = string.gsub(t, "%d+", "#")
+  t = string.gsub(t, "#%%", "#")
+  t = string.gsub(t, "#%s*sec", "#")
+  t = string.gsub(t, "#%s*min", "#")
+  t = string.gsub(t, "#%s*yd", "#")
+  t = string.gsub(t, "seconds", "sec")
+  t = string.gsub(t, "second", "sec")
+  t = string.gsub(t, "secs", "sec")
+  t = string.gsub(t, "minutes", "min")
+  t = string.gsub(t, "minute", "min")
+  t = string.gsub(t, "#+", "#")
+  -- слова від $l (attack/attacks) після числа — зводимо
+  t = string.gsub(t, "#%s*attacks", "#")
+  t = string.gsub(t, "#%s*attack", "#")
+  t = string.gsub(t, "#%s*points", "#")
+  t = string.gsub(t, "#%s*point", "#")
+  t = string.gsub(t, "#%s*charges", "#")
+  t = string.gsub(t, "#%s*charge", "#")
+  t = string.gsub(t, "#%s*sec", "#")
+  t = string.gsub(t, "#%s*min", "#")
+  -- $n + $l → два # підряд
+  t = string.gsub(t, "#%s*#", "#")
+  t = string.gsub(t, "%s+", " ")
+  t = string.gsub(t, "^%s+", "")
+  t = string.gsub(t, "%s+$", "")
+  t = string.gsub(t, "%.$", "")
+  t = string.gsub(t, ", ", ",")
+  t = string.gsub(t, ",", ", ")
+  t = string.gsub(t, "%s+", " ")
+  return t
+end
+
 -- Нормалізація: $s1/$d/$o1/$t1/... і звичайні числа -> §1, §2, ...
 -- Повертає: normalized_text, list_of_tokens (числа/плейсхолдери в порядку)
 local function NormalizeForMatch(text)
@@ -408,6 +469,46 @@ local function DictEntryScore(eng, ua)
   return score
 end
 
+-- Розгорнути $lword:words; / $ghis:her; у літеральні варіанти для індексу
+local function ExpandGrammarVariants(eng)
+  if not eng or not string.find(eng, "%$", 1, true) then
+    return { eng }
+  end
+  local variants = { eng }
+  local i
+  -- повторюємо кілька разів (кілька $l у одному рядку)
+  for i = 1, 6 do
+    local nextv = {}
+    local any = false
+    local vi
+    for vi = 1, table.getn(variants) do
+      local s = variants[vi]
+      local a, b, w1, w2 = string.find(s, "%$[lL]([^:;]+):([^;]+);")
+      if a then
+        any = true
+        local pre = string.sub(s, 1, a - 1)
+        local post = string.sub(s, b + 1)
+        table.insert(nextv, pre .. w1 .. post)
+        table.insert(nextv, pre .. w2 .. post)
+      else
+        local c, d, g1, g2 = string.find(s, "%$[gG]([^:;]+):([^;]+);")
+        if c then
+          any = true
+          local pre = string.sub(s, 1, c - 1)
+          local post = string.sub(s, d + 1)
+          table.insert(nextv, pre .. g1 .. post)
+          table.insert(nextv, pre .. g2 .. post)
+        else
+          table.insert(nextv, s)
+        end
+      end
+    end
+    variants = nextv
+    if not any then break end
+  end
+  return variants
+end
+
 local function RegisterNormEntry(eng, ua, score)
   local norm = NormalizeForMatch(eng)
   if not norm or norm == "" then return end
@@ -452,6 +553,30 @@ local function AddDictTable(src)
       -- 2) повна нормалізація
       local score = DictEntryScore(eng, ua)
       RegisterNormEntry(eng, ua, score)
+      -- soft-norm: "75% for 5 sec" ↔ "$s1% for $d"
+      local sn = SoftNormKey(eng)
+      if sn ~= "" and string.len(sn) >= 20 and not softNormUA[sn] then
+        softNormUA[sn] = ua
+        softNormCount = softNormCount + 1
+      end
+      -- варіанти $l / $g як у клієнті (attack vs attacks)
+      local gvars = ExpandGrammarVariants(eng)
+      local gi
+      for gi = 1, table.getn(gvars) do
+        if gvars[gi] ~= eng then
+          RegisterNormEntry(gvars[gi], ua, score - 1)
+          local exg = SoftExactKey(gvars[gi])
+          if exg ~= "" and not exactUA[exg] then
+            exactUA[exg] = ua
+            exactCount = exactCount + 1
+          end
+          local sng = SoftNormKey(gvars[gi])
+          if sng ~= "" and string.len(sng) >= 20 and not softNormUA[sng] then
+            softNormUA[sng] = ua
+            softNormCount = softNormCount + 1
+          end
+        end
+      end
 
       -- 3) МАСОВО: перше речення окремо (гра часто показує коротший опис)
       --    "Foo. Bar." → також індексуємо "Foo."
@@ -475,6 +600,8 @@ end
 local function BuildDict()
   dictUA = {}
   dictMask = {}
+  softNormUA = {}
+  softNormCount = 0
   dictScore = {}
   sortedKeys = {}
   dictCount = 0
@@ -498,6 +625,23 @@ local function BuildDict()
   AddDictTable(OceUA_profession_ranks)
   AddDictTable(OceUA_pet_teach)
   AddDictTable(OceUA_challenges)
+  -- challenges: soft-exact має перебивати старі рядки з Skill_Dictionary
+  if OceUA_challenges then
+    for eng, ua in pairs(OceUA_challenges) do
+      if ua and ua ~= "" and eng ~= "Challenge" then
+        local exact = SoftExactKey(eng)
+        if exact ~= "" then
+          exactUA[exact] = ua
+        end
+        local sn = SoftNormKey(eng)
+        if sn ~= "" and string.len(sn) >= 12 then
+          softNormUA[sn] = ua
+        end
+        -- прямий exact без soft key
+        exactUA[string.lower(eng)] = ua
+      end
+    end
+  end
   table.sort(sortedKeys, function(a, b) return string.len(a) > string.len(b) end)
   -- скелет-індекс: слова без чисел — запасний матч коли # розходяться
   local i
@@ -551,6 +695,7 @@ function OceUA_SkillStatus()
     enabled = SkillEnabled() and true or false,
     dictCount = dictCount or 0,
     exactCount = exactCount or 0,
+    softNormCount = softNormCount or 0,
     itemCount = itemDictCount or 0,
     cacheCount = cacheCount or 0,
     cacheMax = CACHE_MAX,
@@ -660,6 +805,9 @@ end
 -- Фінальна чистка перекладу: залишкові EN одиниці, подвійні пробіли, "на ."
 local function CleanupUA(s)
   if not s then return s end
+  -- залишки $lword:words; / $g (якщо токенів не вистачило)
+  s = string.gsub(s, "%$[lL]([^:]+):([^;]+);", "%1")
+  s = string.gsub(s, "%$[gG]([^:]+):([^;]+);", "%1")
   -- EN одиниці → UA (лише латиниця min/sec/yd, не чіпати вже «хв/сек»)
   s = string.gsub(s, "(%d+%.?%d*)%s*[Ss][Ee][Cc][Ss]?%.?", "%1 сек")
   s = string.gsub(s, "(%d+%.?%d*)%s*[Mm][Ii][Nn][Ss]?%.?", "%1 хв")
@@ -744,6 +892,10 @@ local function TranslateText(text)
   if not text or text == "" then return text, false end
 
   local clean = StripCodes(text)
+  -- виправлення старих UA-назв випробувань (навіть якщо вже кирилиця)
+  if CHALLENGE_UA_FIX and CHALLENGE_UA_FIX[clean] then
+    return CHALLENGE_UA_FIX[clean], true
+  end
   -- уже українською — не чіпаємо (анти-миготіння)
   if HasCyrillic(clean) then return text, false end
 
@@ -785,6 +937,18 @@ local function TranslateText(text)
     end
   end
 
+  -- пріоритет: challenges.lua (назви випробувань)
+  if OceUA_challenges and OceUA_challenges[clean] then
+    local cua = OceUA_challenges[clean]
+    if cua and cua ~= "" then
+      if cacheCount < CACHE_MAX then
+        translateCache[clean] = { cua, true }
+        cacheCount = cacheCount + 1
+      end
+      return cua, true
+    end
+  end
+
   -- soft-exact: числа ЗБЕРІГАЮТЬСЯ → "Increased Hit Chance 5" ≠ "... 3"
   -- це рятує ранги, які після повної Normalize злипаються в один ключ
   if exactCount > 0 then
@@ -795,6 +959,22 @@ local function TranslateText(text)
     end
     if exactHit then
       local result = FinalizeUA(exactHit, clean)
+      if cacheCount < CACHE_MAX then
+        translateCache[clean] = { result, true }
+        cacheCount = cacheCount + 1
+      end
+      return result, true
+    end
+  end
+
+  -- soft-norm: описи з підставленими числами (тренер / тултіп)
+  if softNormCount and softNormCount > 0 then
+    local sn = SoftNormKey(clean)
+    local snUA = softNormUA[sn]
+    if snUA then
+      local _, tokens = NormalizeForMatch(clean)
+      local result = ApplyTokens(snUA, tokens)
+      result = CleanupUA(result)
       if cacheCount < CACHE_MAX then
         translateCache[clean] = { result, true }
         cacheCount = cacheCount + 1
@@ -1762,9 +1942,80 @@ local function TranslateRequiresLevelText(text)
   return text, false
 end
 
+local function FixRankText(s)
+  if not s or s == "" then return s end
+  if not string.find(s, "[Rr][Aa][Nn][Kk]") then return s end
+  local n = s
+  n = string.gsub(n, "|c%x%x%x%x%x%x%x%x[Rr]ank|r%s*(%d+)", "Ранг %1")
+  n = string.gsub(n, "|c%x%x%x%x%x%x%x%x[Rr]ANK|r%s*(%d+)", "Ранг %1")
+  n = string.gsub(n, "%([Rr][Aa][Nn][Kk]%s*(%d+)%)", "(Ранг %1)")
+  n = string.gsub(n, "([%s%|%(%[%{])[Rr][Aa][Nn][Kk]%s*(%d+)", "%1Ранг %2")
+  n = string.gsub(n, "^[Rr][Aa][Nn][Kk]%s*(%d+)", "Ранг %1")
+  n = string.gsub(n, "([%s])[Rr][Aa][Nn][Kk]%s*(%d+)", "%1Ранг %2")
+  n = string.gsub(n, "%s+[Rr][Aa][Nn][Kk]%s+(%d+)", " (Ранг %1)")
+  n = string.gsub(n, "[Rr][Aa][Nn][Kk]%s*:%s*(%d+)", "Ранг: %1")
+  n = string.gsub(n, "[Rr][Aa][Nn][Kk]:", "Ранг:")
+  n = string.gsub(n, "%([Rr][Aa][Nn][Kk]%)", "(Ранг)")
+  return n
+end
+
+local function FixRankInFrame(frame, depth)
+  if not frame or (depth and depth > 6) then return end
+  depth = depth or 0
+  if frame.GetRegions then
+    local regs = { frame:GetRegions() }
+    local i
+    for i = 1, table.getn(regs) do
+      local r = regs[i]
+      if r and r.GetObjectType and r:GetObjectType() == "FontString" and r.GetText and r.SetText then
+        local tx = r:GetText()
+        if tx and string.find(tx, "[Rr][Aa][Nn][Kk]") then
+          local nx = FixRankText(tx)
+          if nx ~= tx then r:SetText(nx) end
+        end
+      end
+    end
+  end
+  if frame.GetChildren then
+    local kids = { frame:GetChildren() }
+    local i
+    for i = 1, table.getn(kids) do
+      FixRankInFrame(kids[i], depth + 1)
+    end
+  end
+end
+
+local function TranslateTrainerLine(text)
+  if not text or text == "" then return text end
+  local t0 = text
+  -- уже повністю UA без Rank
+  if HasCyrillic(text) and not string.find(text, "[Rr]ank") then
+    return text
+  end
+  local base = string.gsub(text, "%s*%(.*%)%s*$", "")
+  base = string.gsub(base, "%s+[Rr]ank%s+%d+%s*$", "")
+  base = string.gsub(base, "%s+$", "")
+  local ua = nil
+  if OceUA_Skill_Dictionary and OceUA_Skill_Dictionary[base] then
+    ua = OceUA_Skill_Dictionary[base]
+  end
+  if not ua then
+    local nt, ok = TranslateText(base)
+    if ok then ua = nt end
+  end
+  local _, _, rankNum = string.find(text, "[Rr]ank%s*(%d+)")
+  if ua then
+    if rankNum then
+      return ua .. " (Ранг " .. rankNum .. ")"
+    end
+    return ua
+  end
+  -- хоча б Rank
+  return FixRankText(text)
+end
+
 local function ProcessTrainerList()
   if not ClassTrainerFrame or not ClassTrainerFrame:IsVisible() then return end
-  -- 1.12: ClassTrainerSkill1..N
   local max = 11
   if CLASS_TRAINER_SKILLS_DISPLAYED then max = CLASS_TRAINER_SKILLS_DISPLAYED end
   local i
@@ -1772,50 +2023,32 @@ local function ProcessTrainerList()
     local btn = getglobal("ClassTrainerSkill" .. i)
     if btn and btn.IsVisible and btn:IsVisible() then
       local fs = getglobal("ClassTrainerSkill" .. i .. "Text")
-      if not fs and btn.GetFontString then fs = btn:GetFontString() end
-      if fs then
-        TranslateFontString(fs)
+      if fs and fs.GetText then
+        local tx = fs:GetText()
+        if tx and tx ~= "" then
+          local neu = TranslateTrainerLine(tx)
+          if neu and neu ~= tx then fs:SetText(neu) end
+        end
       elseif btn.GetText and btn.SetText then
-        local t = btn:GetText()
-        if t and t ~= "" and not (HasCyrillic and HasCyrillic(t)) then
-          -- прибрати rank суфікс для пошуку
-          local base = string.gsub(t, "%s*%(.*%)%s*$", "")
-          base = string.gsub(base, "%s+$", "")
-          local ua = nil
-          if OceUA_Skill_Dictionary and OceUA_Skill_Dictionary[base] then
-            ua = OceUA_Skill_Dictionary[base]
-          elseif OceUA_Skill_Dictionary and OceUA_Skill_Dictionary[t] then
-            ua = OceUA_Skill_Dictionary[t]
-          end
-          if ua then
-            -- зберегти (Rank N) якщо був
-            local _, _, rank = string.find(t, "(%(.*%))%s*$")
-            if rank then
-              btn:SetText(ua .. "  " .. rank)
-            else
-              btn:SetText(ua)
-            end
-          end
+        local tx = btn:GetText()
+        if tx and tx ~= "" then
+          local neu = TranslateTrainerLine(tx)
+          if neu and neu ~= tx then btn:SetText(neu) end
         end
       end
     end
   end
-  -- заголовки секцій (Fury / Protection)
+  -- заголовки гілок
   for i = 1, max do
     local btn = getglobal("ClassTrainerSkill" .. i)
     if btn and btn.GetText then
-      local t = btn:GetText()
-      if t and (t == "Fury" or t == "Protection" or t == "Arms" or t == "Combat"
-        or t == "Subtlety" or t == "Assassination" or t == "Discipline"
-        or t == "Holy" or t == "Shadow" or t == "Elemental" or t == "Enhancement"
-        or t == "Restoration" or t == "Affliction" or t == "Demonology" or t == "Destruction"
-        or t == "Arcane" or t == "Fire" or t == "Frost" or t == "Balance" or t == "Feral Combat") then
-        if OceUA_Skill_Dictionary and OceUA_Skill_Dictionary[t] then
-          btn:SetText(OceUA_Skill_Dictionary[t])
-        end
+      local tx = btn:GetText()
+      if tx and OceUA_Skill_Dictionary and OceUA_Skill_Dictionary[tx] then
+        btn:SetText(OceUA_Skill_Dictionary[tx])
       end
     end
   end
+  if ClassTrainerFrame then FixRankInFrame(ClassTrainerFrame, 0) end
 end
 
 local function ProcessTrainerDetails()
@@ -1824,31 +2057,273 @@ local function ProcessTrainerDetails()
 
   ProcessTrainerList()
 
-  TranslateFontString(ClassTrainerSkillName)
-  -- requirements: Level N
+  if ClassTrainerSkillName then
+    local sn = ClassTrainerSkillName:GetText()
+    if sn and sn ~= "" then
+      local neu = TranslateTrainerLine(sn)
+      if neu and neu ~= sn then ClassTrainerSkillName:SetText(neu) end
+      neu = FixRankText(ClassTrainerSkillName:GetText() or "")
+      if neu ~= (ClassTrainerSkillName:GetText() or "") then
+        ClassTrainerSkillName:SetText(neu)
+      end
+    end
+  end
   if ClassTrainerSkillRequirements then
     local rt = ClassTrainerSkillRequirements:GetText()
     if rt then
       local n, ok = TranslateRequiresLevelText(rt)
-      if ok then
-        ClassTrainerSkillRequirements:SetText(n)
-      else
-        TranslateFontString(ClassTrainerSkillRequirements)
-      end
+      if ok then ClassTrainerSkillRequirements:SetText(n)
+      else TranslateFontString(ClassTrainerSkillRequirements) end
     end
   end
   TranslateFontString(ClassTrainerSkillDescription)
-  if ClassTrainerCostLabel then
-    TranslateFontString(ClassTrainerCostLabel)
-  end
-  -- Cost:
-  local costFS = getglobal("ClassTrainerCostLabel")
-  if costFS then
-    local ct = costFS:GetText()
-    if ct and (ct == "Cost:" or ct == "Cost") then
-      costFS:SetText("Вартість:")
+  local descFS = ClassTrainerSkillDescription
+  if not descFS then descFS = getglobal("ClassTrainerDetailScrollChildFrame") end
+  if descFS and descFS.GetRegions then
+    local regs = { descFS:GetRegions() }
+    local ri
+    for ri = 1, table.getn(regs) do
+      local r = regs[ri]
+      if r and r.GetObjectType and r:GetObjectType() == "FontString" then
+        TranslateFontString(r)
+      end
     end
   end
+  if ClassTrainerCostLabel then
+    TranslateFontString(ClassTrainerCostLabel)
+    local ct = ClassTrainerCostLabel:GetText()
+    if ct and (ct == "Cost:" or ct == "Cost") then
+      ClassTrainerCostLabel:SetText("Вартість:")
+    end
+  end
+  if ClassTrainerFrame then FixRankInFrame(ClassTrainerFrame, 0) end
+end
+
+-- Перехоплення SetText: клієнт пише EN → одразу UA (без кадру миготіння)
+local trainerButtonsHooked = false
+
+local function HookOneFontString(fs)
+  if not fs or not fs.SetText or fs.oceOceHooked then return end
+  fs.oceOceHooked = true
+  local oldSet = fs.SetText
+  fs.SetText = function(self, text)
+    if SkillEnabled() and text and text ~= "" then
+      if string.find(text, "[A-Za-z]") or string.find(text, "[Rr][Aa][Nn][Kk]") then
+        text = TranslateTrainerLine(text)
+        text = FixRankText(text)
+      end
+    end
+    oldSet(self, text)
+  end
+  if fs.SetFormattedText then
+    local oldFmt = fs.SetFormattedText
+    fs.SetFormattedText = function(self, fmt, a1, a2, a3, a4, a5, a6)
+      if SkillEnabled() and type(fmt) == "string" and string.find(fmt, "[Rr][Aa][Nn][Kk]") then
+        fmt = string.gsub(fmt, "[Rr][Aa][Nn][Kk]", "Ранг")
+      end
+      return oldFmt(self, fmt, a1, a2, a3, a4, a5, a6)
+    end
+  end
+end
+
+local function HookFontStringsDeep(frame, depth)
+  if not frame or depth > 8 then return end
+  if frame.GetRegions then
+    local regs = { frame:GetRegions() }
+    local i
+    for i = 1, table.getn(regs) do
+      local r = regs[i]
+      if r and r.GetObjectType and r:GetObjectType() == "FontString" then
+        HookOneFontString(r)
+      end
+    end
+  end
+  if frame.GetChildren then
+    local kids = { frame:GetChildren() }
+    local i
+    for i = 1, table.getn(kids) do
+      HookFontStringsDeep(kids[i], depth + 1)
+    end
+  end
+end
+
+local function HookTrainerSkillButtons()
+  if not ClassTrainerFrame then return end
+  HookFontStringsDeep(ClassTrainerFrame, 0)
+  local max = 11
+  if CLASS_TRAINER_SKILLS_DISPLAYED then max = CLASS_TRAINER_SKILLS_DISPLAYED end
+  local i
+  for i = 1, max do
+    local fs = getglobal("ClassTrainerSkill" .. i .. "Text")
+    if fs then HookOneFontString(fs) end
+    local btn = getglobal("ClassTrainerSkill" .. i)
+    if btn then
+      HookFontStringsDeep(btn, 0)
+      if btn.SetText and not btn.oceOceHookedBtn then
+        btn.oceOceHookedBtn = true
+        local oldSet = btn.SetText
+        btn.SetText = function(self, text)
+          if SkillEnabled() and text and text ~= "" then
+            text = TranslateTrainerLine(text)
+            text = FixRankText(text)
+          end
+          oldSet(self, text)
+        end
+      end
+    end
+  end
+  if ClassTrainerSkillName then HookOneFontString(ClassTrainerSkillName) end
+  if ClassTrainerSkillDescription then HookOneFontString(ClassTrainerSkillDescription) end
+  if type(RANK) == "string" and (RANK == "Rank" or RANK == "RANK") then RANK = "Ранг" end
+  if type(RANK_COLON) == "string" and string.find(tostring(RANK_COLON), "[Rr]ank") then
+    RANK_COLON = "Ранг:"
+  end
+  if type(TOOLTIP_TALENT_RANK) == "string" and string.find(TOOLTIP_TALENT_RANK, "[Rr]ank") then
+    TOOLTIP_TALENT_RANK = string.gsub(TOOLTIP_TALENT_RANK, "[Rr]ank", "Ранг")
+  end
+  trainerButtonsHooked = true
+end
+
+local trainerWatch = CreateFrame("Frame")
+trainerWatch.acc = 0
+trainerWatch:Hide()
+trainerWatch:SetScript("OnUpdate", function()
+  if not SkillEnabled() or not ClassTrainerFrame or not ClassTrainerFrame:IsVisible() then
+    this:Hide()
+    return
+  end
+  this.hookAcc = (this.hookAcc or 0) + arg1
+  if this.hookAcc >= 1.0 then
+    this.hookAcc = 0
+    HookTrainerSkillButtons()
+  end
+  -- без періодичного ProcessTrainerList/FixRankInFrame — хуки SetText гасять Rank без миготіння
+end)
+
+local function ScheduleTrainerTranslate()
+  HookTrainerSkillButtons()
+  trainerWatch.acc = 0
+  trainerWatch:Show()
+  ProcessTrainerDetails()
+end
+
+
+-- ============================================================
+-- Spellbook (книга заклинань гравця)
+-- ============================================================
+local function TranslateSpellBookButton(i)
+  local btn = getglobal("SpellButton" .. i)
+  if not btn or not btn:IsVisible() then return end
+  -- 1.12: назва часто в SpellButtonNSpellName або SubText / FontString дітей
+  local candidates = {
+    getglobal("SpellButton" .. i .. "SpellName"),
+    getglobal("SpellButton" .. i .. "Title"),
+    getglobal("SpellButton" .. i .. "Name"),
+  }
+  local ci
+  for ci = 1, table.getn(candidates) do
+    if candidates[ci] then TranslateFontString(candidates[ci]) end
+  end
+  local sub = getglobal("SpellButton" .. i .. "SubText")
+  if sub then
+    local st = sub:GetText()
+    if st and st ~= "" and not HasCyrillic(st) then
+      -- Rank 1 → Ранг 1
+      local nst = string.gsub(st, "^[Rr]ank%s*(%d+)", "Ранг %1")
+      nst = string.gsub(nst, "^Passive", "Пасивно")
+      if nst ~= st then
+        sub:SetText(nst)
+      else
+        TranslateFontString(sub)
+      end
+    end
+  end
+  -- обхід FontString на кнопці
+  if btn.GetRegions then
+    local regs = { btn:GetRegions() }
+    local ri
+    for ri = 1, table.getn(regs) do
+      local r = regs[ri]
+      if r and r.GetObjectType and r:GetObjectType() == "FontString" then
+        local tx = r:GetText()
+        if tx and tx ~= "" and not HasCyrillic(tx) then
+          -- не чіпати макроси/номери
+          if not string.find(tx, "^%d+$") then
+            local base = string.gsub(tx, "%s*%(.*%)%s*$", "")
+            base = string.gsub(base, "%s+$", "")
+            local ua = OceUA_Skill_Dictionary and OceUA_Skill_Dictionary[base]
+            if ua then
+              local _, _, rank = string.find(tx, "(%(.*%))%s*$")
+              if rank then
+                rank = string.gsub(rank, "[Rr]ank%s*", "Ранг ")
+                r:SetText(ua .. " " .. rank)
+              else
+                r:SetText(ua)
+              end
+            else
+              TranslateFontString(r)
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
+local function ProcessSpellBook()
+  if not SkillEnabled() then return end
+  if not SpellBookFrame or not SpellBookFrame:IsVisible() then return end
+  local max = 12
+  if SPELLS_PER_PAGE then max = SPELLS_PER_PAGE end
+  local i
+  for i = 1, max do
+    TranslateSpellBookButton(i)
+  end
+  -- вкладки ліній скілів (General, etc. — імена з GetSpellTabInfo)
+  local ti
+  for ti = 1, 8 do
+    local tab = getglobal("SpellBookSkillLineTab" .. ti)
+    -- іконки без тексту; заголовок книги:
+  end
+  if SpellBookFrameTitleText then
+    TranslateFontString(SpellBookFrameTitleText)
+  end
+  -- підпис сторінки / skill line
+  if SpellBookFrameTabButton1 then
+    local tb
+    for tb = 1, 3 do
+      local b = getglobal("SpellBookFrameTabButton" .. tb)
+      if b and b.GetText and b:GetText() then
+        local tx = b:GetText()
+        if tx == "Spellbook" then b:SetText("Заклинання")
+        elseif tx == "Pet" then b:SetText("Улюбленець")
+        elseif tx and not HasCyrillic(tx) then
+          local ua = OceUA_Skill_Dictionary and OceUA_Skill_Dictionary[tx]
+          if ua then b:SetText(ua) end
+        end
+      end
+    end
+  end
+end
+
+local spellBookWatch = CreateFrame("Frame")
+spellBookWatch.acc = 0
+spellBookWatch:Hide()
+spellBookWatch:SetScript("OnUpdate", function()
+  if not SkillEnabled() or not SpellBookFrame or not SpellBookFrame:IsVisible() then
+    this:Hide()
+    return
+  end
+  this.acc = this.acc + arg1
+  if this.acc < 0.15 then return end
+  this.acc = 0
+  ProcessSpellBook()
+end)
+
+local function ScheduleSpellBookTranslate()
+  spellBookWatch.acc = 0
+  spellBookWatch:Show()
+  ProcessSpellBook()
 end
 
 -- ============================================================
@@ -2316,7 +2791,10 @@ local function HookFrames()
     local oldUpd = ClassTrainer_Update
     ClassTrainer_Update = function(a1, a2, a3, a4)
       oldUpd(a1, a2, a3, a4)
-      if SkillEnabled() then ProcessTrainerDetails() end
+      if SkillEnabled() then
+        ProcessTrainerDetails()
+        ScheduleTrainerTranslate()
+      end
     end
   end
   if ClassTrainer_SetSelection then
@@ -2324,6 +2802,7 @@ local function HookFrames()
     ClassTrainer_SetSelection = function(id)
       old(id)
       ProcessTrainerDetails()
+      ScheduleTrainerTranslate()
     end
   end
 
@@ -2333,8 +2812,35 @@ local function HookFrames()
     ClassTrainerFrame:SetScript("OnShow", function()
       if oldShow then oldShow() end
       ProcessTrainerDetails()
+      ScheduleTrainerTranslate()
     end)
   end
+
+  -- Spellbook
+  if SpellBookFrame then
+    local oldSBShow = SpellBookFrame:GetScript("OnShow")
+    SpellBookFrame:SetScript("OnShow", function()
+      if oldSBShow then oldSBShow() end
+      ScheduleSpellBookTranslate()
+    end)
+  end
+  if SpellBookFrame_Update then
+    local oldSBU = SpellBookFrame_Update
+    SpellBookFrame_Update = function(a1, a2, a3, a4)
+      oldSBU(a1, a2, a3, a4)
+      if SkillEnabled() then ScheduleSpellBookTranslate() end
+    end
+  end
+  if SpellButton_UpdateButton then
+    local oldSBtn = SpellButton_UpdateButton
+    SpellButton_UpdateButton = function(a1, a2, a3, a4)
+      oldSBtn(a1, a2, a3, a4)
+      if SkillEnabled() and SpellBookFrame and SpellBookFrame:IsVisible() then
+        ProcessSpellBook()
+      end
+    end
+  end
+
 
   -- TradeSkill
   if TradeSkillFrame_SetSelection then
