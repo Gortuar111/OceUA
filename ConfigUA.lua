@@ -7,7 +7,7 @@
   Lua 5.0 / WoW 1.12 — без string.match / table.pack тощо.
 ]]
 
-local VERSION = "1.5.0"
+local VERSION = "1.6.6"
 
 OceUA_Settings = OceUA_Settings or {
     enabled      = true,
@@ -17,6 +17,7 @@ OceUA_Settings = OceUA_Settings or {
     skill        = true,
     skillShowID  = false,
     showOriginal = true,
+    nameplates   = true,
     bookFontSize = 13,
     minimapPos   = 220,
 }
@@ -45,6 +46,7 @@ function OceUA_IsEnabled(module)
     if module == "gossip" then return S.gossip ~= false end
     if module == "book"   then return S.book ~= false end
     if module == "skill"  then return S.skill ~= false end
+    if module == "nameplates" then return S.nameplates == true end
     if module == "world"  then return true end
     return true
 end
@@ -392,12 +394,13 @@ MakeCheck(panelMain, "gossip",       "Діалоги NPC",               2)
 MakeCheck(panelMain, "book",         "Книги / листи",             3)
 MakeCheck(panelMain, "skill",        "Скіли / предмети",          4)
 MakeCheck(panelMain, "showOriginal", "EN-назва під UA у тултіпі", 5)
+MakeCheck(panelMain, "nameplates",   "Підписи UA над мобами (неймплейти)", 6)
 
 local sepMain = panelMain:CreateTexture(nil, "ARTWORK")
 sepMain:SetTexture("Interface\\Buttons\\WHITE8X8")
 sepMain:SetVertexColor(0.55, 0.35, 0.80, 0.40)
-sepMain:SetPoint("TOPLEFT", 0, -6 * ROW - 6)
-sepMain:SetPoint("TOPRIGHT", 0, -6 * ROW - 6)
+sepMain:SetPoint("TOPLEFT", 0, -7 * ROW - 6)
+sepMain:SetPoint("TOPRIGHT", 0, -7 * ROW - 6)
 sepMain:SetHeight(1)
 
 -- підказка спільна для всіх вкладок (над кнопкою Закрити)
@@ -786,6 +789,7 @@ boot:SetScript("OnEvent", function()
         if S.skill == nil then S.skill = true end
         if S.skillShowID == nil then S.skillShowID = false end
         if S.showOriginal == nil then S.showOriginal = true end
+        if S.nameplates == nil then S.nameplates = true end
         if S.bookFontSize == nil then S.bookFontSize = 13 end
         if S.minimapPos == nil then S.minimapPos = 220 end
         MigrateOldSettings()

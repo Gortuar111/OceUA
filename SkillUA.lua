@@ -25,7 +25,7 @@
 ]]
 
 local ADDON_NAME = "OceUA"
-local VERSION = "1.5.0"
+local VERSION = "1.6.6"
 
 -- налаштування скілів
 -- з 1.2.0 основне джерело — OceUA_Settings (/oceua);

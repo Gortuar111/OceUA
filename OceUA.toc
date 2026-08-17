@@ -2,7 +2,7 @@
 ## Title: |cffb266ffOce|rUA
 ## Notes: UA-переклади: квести, діалоги, книги, скіли, предмети | /oceua
 ## Author: Oce
-## Version: 1.5.0
+## Version: 1.6.6
 ## DefaultState: enabled
 ## SavedVariables: OceUA_Settings, OceBookUA_Settings, OceBookUA_Pending, OceGossipUA_Settings, OceGossipUA_Pending, OceQuestUA_Settings
 
@@ -72,3 +72,4 @@ GossipUA.lua
 QuestUA.lua
 SkillUA.lua
 UnitUA.lua
+NameplateUA.lua
