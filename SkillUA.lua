@@ -25,7 +25,7 @@
 ]]
 
 local ADDON_NAME = "OceUA"
-local VERSION = "1.7.0"
+local VERSION = "1.8.1"
 
 -- налаштування скілів
 -- з 1.2.0 основне джерело — OceUA_Settings (/oceua);
@@ -3037,4 +3037,131 @@ SlashCmdList["OCESKILLUA"] = function(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cffb266ffOce|rSkillUA v" .. VERSION .. "|r")
     DEFAULT_CHAT_FRAME:AddMessage("  /oceskill test | dump | id | original | reload | cache | status | toggle")
   end
+end
+
+
+-- ============================================================
+-- Merchant / Auction / Bank UI (назви в списках, не лише тултіп)
+-- ============================================================
+local function LookupItemName(en)
+  if not en or en == "" then return nil end
+  if OceUA_Item_Dictionary and OceUA_Item_Dictionary[en] then return OceUA_Item_Dictionary[en] end
+  if itemDictUA and itemDictUA[en] then return itemDictUA[en] end
+  if OceUA_Items_Dictionary and OceUA_Items_Dictionary[en] then return OceUA_Items_Dictionary[en] end
+  return nil
+end
+
+local function TranslateMerchantFrame()
+  if not SkillEnabled() then return end
+  if not MerchantFrame or not MerchantFrame:IsVisible() then return end
+  local i
+  for i = 1, 12 do
+    local nameFS = getglobal("MerchantItem" .. i .. "Name")
+    if nameFS and nameFS.GetText then
+      local tx = nameFS:GetText()
+      if tx and tx ~= "" and not HasCyrillic(tx) then
+        local ua = LookupItemName(tx)
+        if not ua then
+          local nt, ok = TranslateText(tx)
+          if ok then ua = nt end
+        end
+        if ua then nameFS:SetText(ua) end
+      end
+    end
+  end
+  if MerchantNameText then TranslateFontString(MerchantNameText) end
+end
+
+local function TranslateAuctionFrame()
+  if not SkillEnabled() then return end
+  if not AuctionFrame or not AuctionFrame:IsVisible() then return end
+  local i
+  for i = 1, 8 do
+    local nameFS = getglobal("BrowseButton" .. i .. "Name")
+    if nameFS and nameFS.GetText then
+      local tx = nameFS:GetText()
+      if tx and tx ~= "" and not HasCyrillic(tx) then
+        local ua = LookupItemName(tx)
+        if not ua then
+          local nt, ok = TranslateText(tx)
+          if ok then ua = nt end
+        end
+        if ua then nameFS:SetText(ua) end
+      end
+    end
+  end
+  for i = 1, 9 do
+    local nameFS = getglobal("BidButton" .. i .. "Name")
+    if nameFS and nameFS.GetText then
+      local tx = nameFS:GetText()
+      if tx and tx ~= "" and not HasCyrillic(tx) then
+        local ua = LookupItemName(tx)
+        if ua then nameFS:SetText(ua) end
+      end
+    end
+    nameFS = getglobal("AuctionsButton" .. i .. "Name")
+    if nameFS and nameFS.GetText then
+      local tx = nameFS:GetText()
+      if tx and tx ~= "" and not HasCyrillic(tx) then
+        local ua = LookupItemName(tx)
+        if ua then nameFS:SetText(ua) end
+      end
+    end
+  end
+end
+
+local function HookShopFontString(fs)
+  if not fs or not fs.SetText or fs.oceShopHooked then return end
+  fs.oceShopHooked = true
+  local oldSet = fs.SetText
+  fs.SetText = function(self, text)
+    if SkillEnabled() and text and text ~= "" and not HasCyrillic(text) then
+      local ua = LookupItemName(text)
+      if not ua then
+        local nt, ok = TranslateText(text)
+        if ok then ua = nt end
+      end
+      if ua then text = ua end
+    end
+    oldSet(self, text)
+  end
+end
+
+local shopHooked = false
+local function HookMerchantAuctionButtons()
+  local i
+  for i = 1, 12 do
+    HookShopFontString(getglobal("MerchantItem" .. i .. "Name"))
+  end
+  for i = 1, 8 do
+    HookShopFontString(getglobal("BrowseButton" .. i .. "Name"))
+  end
+  for i = 1, 9 do
+    HookShopFontString(getglobal("BidButton" .. i .. "Name"))
+    HookShopFontString(getglobal("AuctionsButton" .. i .. "Name"))
+  end
+  HookShopFontString(MerchantNameText)
+  shopHooked = true
+end
+
+local shopWatch = CreateFrame("Frame")
+shopWatch.acc = 0
+shopWatch:SetScript("OnUpdate", function()
+  this.acc = this.acc + arg1
+  if this.acc < 0.5 then return end
+  this.acc = 0
+  if not SkillEnabled() then return end
+  -- хуки раз + коли вікно відкрите (кнопки з’являються пізно)
+  if (MerchantFrame and MerchantFrame:IsVisible()) or (AuctionFrame and AuctionFrame:IsVisible()) then
+    HookMerchantAuctionButtons()
+  end
+end)
+
+if MerchantFrame then
+  local oldM = MerchantFrame:GetScript("OnShow")
+  MerchantFrame:SetScript("OnShow", function()
+    if oldM then oldM() end
+    HookMerchantAuctionButtons()
+    TranslateMerchantFrame()
+  end)
 end
