@@ -7,7 +7,7 @@
   Lua 5.0 / WoW 1.12 — без string.match / table.pack тощо.
 ]]
 
-local VERSION = "1.9.3"
+local VERSION = "2.0.0"
 
 OceUA_Settings = OceUA_Settings or {
     enabled      = true,
@@ -161,7 +161,7 @@ local function ShowRandomTip()
 end
 
 
--- ========== Frame (фіолетова шапка як у v1.4.4) ==========
+-- ========== Frame (фіолетова шапка як у v2.0.0) ==========
 local PAD, ROW = 14, 26
 local COL = {
     title = {0.95, 0.92, 1.00},

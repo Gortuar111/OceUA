@@ -1,5 +1,5 @@
 --[[
-  OceUA / Skill module v1.4.4
+  OceUA / Skill module v2.0.0
   Переклад скілів / бафів / тренера / професій
   OctoWoW / TurtleWoW (1.12)
 
@@ -25,7 +25,7 @@
 ]]
 
 local ADDON_NAME = "OceUA"
-local VERSION = "1.8.1"
+local VERSION = "2.0.0"
 
 -- налаштування скілів
 -- з 1.2.0 основне джерело — OceUA_Settings (/oceua);

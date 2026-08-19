@@ -17731,7 +17731,6 @@ OceUA_Item_Dictionary = {
   ["Tigule and Foror's Strawberry Ice Cream"] = "Полуничне морозиво від Тігуле та Форора",
   ["Tigule's Harpoon"] = "Гарпун Тігуле",
   ["Tiller's Vest"] = "Жилет Тіллера",
-  ["Timber Wolf"] = "Лісовий вовк",
   ["Timberland Armguards"] = "Нарукавники Timberland",
   ["Timberland Cape"] = "Пальто «Тімберленд»",
   ["Timberling Seed"] = "Насіння Тімберлінга",
