@@ -119,6 +119,23 @@ local function BuildZonePattern(eng)
   return pat
 end
 
+
+local function TranslateZoneName(en)
+  if not en or en == "" then return en end
+  if string.find(en, "8") or string.find(en, "9") then return en end
+  local dict = OceUA_Signs_Dictionary
+  if dict then
+    local ua = dict[en]
+    if ua and ua ~= "" and ua ~= en then return ua end
+  end
+  local stripped = string.gsub(en, "^[Tt]he%s+", "")
+  if dict and stripped ~= en then
+    local ua = dict[stripped]
+    if ua and ua ~= "" then return ua end
+  end
+  return en
+end
+
 local function MatchZoneTemplate(clean)
   if zoneTemplateCount == 0 or not clean then return nil end
   -- клієнт часто дає "Use: Returns you to ..."
@@ -141,6 +158,7 @@ local function MatchZoneTemplate(clean)
         capt = string.gsub(capt, "%.$", "")
         -- відкинути надто довгі «фейкові» capture (цілий абзац)
         if string.len(capt) <= 60 and not string.find(capt, "Speak to") then
+          if TranslateZoneName then capt = TranslateZoneName(capt) end
           local ua = string.gsub(t.ua, "%$z", capt)
           -- якщо був префікс Use: — повернути «Використання:» за бажанням лишаємо без нього (опис у тултіпі)
           return ua
@@ -152,12 +170,12 @@ local function MatchZoneTemplate(clean)
   local _, _, loc = string.find(clean, "[Rr]eturns you to ([^%.]+)")
   if loc and not string.find(loc, "your home") and string.len(loc) <= 50 then
     loc = string.gsub(loc, "^%s+", ""); loc = string.gsub(loc, "%s+$", "")
-    return "Повертає вас до " .. loc .. ". Поговоріть з господарем таверни в іншому місці, щоб змінити точку повернення."
+    return "Повертає вас до " .. TranslateZoneName(loc) .. ". Поговоріть з господарем таверни в іншому місці, щоб змінити точку повернення."
   end
   _, _, loc = string.find(clean, "[Yy]our home is currently ([^%.]+)")
   if loc and string.len(loc) <= 50 then
     loc = string.gsub(loc, "^%s+", ""); loc = string.gsub(loc, "%s+$", "")
-    return "Повертає вас додому. Наразі ваш дім: " .. loc .. "."
+    return "Повертає вас додому. Наразі ваш дім: " .. TranslateZoneName(loc) .. "."
   end
   return nil
 end
@@ -1388,24 +1406,26 @@ TranslateItemLine = function(text)
     end
   end
 
+
   -- Камінь повернення / Hearthstone: зберегти назву локації ($z у базі)
   -- "Returns you to Stormwind City. Speak to an Innkeeper..."
-  local _, _, loc = string.find(clean, "^Returns you to (.+)%. Speak to an Innkeeper in a different place to change your home location%.?$")
+  -- optional "Use: " prefix (клієнт часто дає з префіксом)
+  local hs = string.gsub(clean, "^Use:%s*", "")
+  local _, _, loc = string.find(hs, "^Returns you to (.+)%. Speak to an Innkeeper in a different place to change your home location%.?$")
   if loc and loc ~= "" and loc ~= "$z" then
-    return "Повертає вас до " .. loc .. ". Поговоріть з господарем таверни в іншому місці, щоб змінити точку повернення.", true
+    return "Використання: Повертає вас до " .. TranslateZoneName(loc) .. ". Поговоріть з господарем таверни в іншому місці, щоб змінити точку повернення.", true
   end
-  -- варіант без крапки / з іншими пробілами
-  _, _, loc = string.find(clean, "^Returns you to (.+)%.%s*Speak to an Innkeeper")
+  _, _, loc = string.find(hs, "^Returns you to (.+)%.%s*Speak to an Innkeeper")
   if loc and loc ~= "" and loc ~= "$z" then
-    return "Повертає вас до " .. loc .. ". Поговоріть з господарем таверни в іншому місці, щоб змінити точку повернення.", true
+    return "Використання: Повертає вас до " .. TranslateZoneName(loc) .. ". Поговоріть з господарем таверни в іншому місці, щоб змінити точку повернення.", true
   end
-  _, _, loc = string.find(clean, "^Returns you to your home%.%s*Your home is currently (.+)%.?$")
+  _, _, loc = string.find(hs, "^Returns you to your home%.%s*Your home is currently (.+)%.?$")
   if loc and loc ~= "" and loc ~= "$z" then
-    return "Повертає вас додому. Наразі ваш дім: " .. loc .. ".", true
+    return "Використання: Повертає вас додому. Наразі ваш дім: " .. TranslateZoneName(loc) .. ".", true
   end
-  _, _, loc = string.find(clean, "^Yanks the caster through the twisting nether back to (.+)%.%s*Speak to an Innkeeper")
+  _, _, loc = string.find(hs, "^Yanks the caster through the twisting nether back to (.+)%.%s*Speak to an Innkeeper")
   if loc and loc ~= "" and loc ~= "$z" then
-    return "Переносить вас через Вируючу Порожнечу назад до " .. loc .. ". Поговоріть з господарем таверни в іншому місці, щоб змінити точку повернення.", true
+    return "Використання: Переносить вас через Вируючу Порожнечу назад до " .. TranslateZoneName(loc) .. ". Поговоріть з господарем таверни в іншому місці, щоб змінити точку повернення.", true
   end
 
   -- +N Stat  /  +N% Something
@@ -1438,7 +1458,7 @@ TranslateItemLine = function(text)
   if blk then return blk .. " Блок", true end
 
   -- Durability N / M
-  local _, _, d1, d2 = string.find(clean, "^Durability (%d+) / (%d+)$")
+  local _, _, d1, d2 = string.find(clean, "^Durability:?%s*(%d+)%s*/%s*(%d+)$")
   if d1 then return "Міцність " .. d1 .. " / " .. d2, true end
 
   -- Charges
@@ -1472,9 +1492,9 @@ TranslateItemLine = function(text)
   if arm2 then return "Броня: " .. arm2, true end
 
   -- Durability X / Y
-  local _, _, d1, d2 = string.find(clean, "^Durability (%d+) / (%d+)$")
+  local _, _, d1, d2 = string.find(clean, "^Durability:?%s*(%d+)%s*/%s*(%d+)$")
   if d1 then return "Міцність " .. d1 .. " / " .. d2, true end
-  local _, _, d3, d4 = string.find(clean, "^Durability (%d+)/(%d+)$")
+  local _, _, d3, d4 = string.find(clean, "^Durability:?%s*(%d+)%s*/%s*(%d+)$")
   if d3 then return "Міцність " .. d3 .. " / " .. d4, true end
 
   -- Speed X.XX (weapon)

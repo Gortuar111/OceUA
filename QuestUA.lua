@@ -3622,7 +3622,37 @@ local function OceTip_StyleBody(text)
     return text
 end
 
--- головний: перекласти рядок ДО показу
+-- предмети / скіли / Use: / Durability — НЕ чіпаємо (це SkillUA)
+local function OceTip_IsItemOrSkillLine(plain)
+    if not plain then return true end
+    local p = string.lower(plain)
+    if string.find(p, "^use:") then return true end
+    if string.find(p, "^equip:") then return true end
+    if string.find(p, "^chance on hit") then return true end
+    if string.find(p, "^durability") then return true end
+    if string.find(p, "^soulbound") then return true end
+    if string.find(p, "^unique") then return true end
+    if string.find(p, "^binds") then return true end
+    if string.find(p, "^requires") then return true end
+    if string.find(p, "^weapon") then return true end
+    if string.find(p, "^armor") then return true end
+    if string.find(p, "^slot") then return true end
+    if string.find(p, "^speed ") then return true end
+    if string.find(p, "damage per second") then return true end
+    if string.find(p, "^sells? for") then return true end
+    if string.find(p, "^already known") then return true end
+    if string.find(p, "^cooldown") then return true end
+    if string.find(p, "^classes:") then return true end
+    if string.find(p, "^races:") then return true end
+    if string.find(p, "^item level") then return true end
+    if string.find(plain, "^Використання:") then return true end
+    if string.find(plain, "^Міцність") then return true end
+    if string.find(plain, "^Прив") then return true end
+    if string.find(plain, "^Унікальн") then return true end
+    return false
+end
+
+-- головний: лише квестові рядки pfQuest ([!]/[?] / - N/M)
 local function OceTip_ConvertLine(text)
     if not text or text == "" then return text end
     if OceUA_IsEnabled and not OceUA_IsEnabled("quest") then return text end
@@ -3631,14 +3661,17 @@ local function OceTip_ConvertLine(text)
     local plain = OceTip_Strip(text)
     if plain == "" then return text end
 
+    -- ніколи не чіпати предмети/скіли
+    if OceTip_IsItemOrSkillLine(plain) then return text end
+
     if OceTip_HasMarker(plain) then
         return OceTip_StyleMarker(text)
     end
     if OceTip_IsObjCounter(plain) then
         return OceTip_StyleCounter(text)
     end
-    -- довгий англ. текст (O/D опис квесту на NPC)
-    if not (HasCyrQ and HasCyrQ(plain)) and string.len(plain) > 18 then
+    -- опис квесту на NPC: лише якщо вже був [!] у цьому тултіпі
+    if oceTipLastQuestEN and not (HasCyrQ and HasCyrQ(plain)) and string.len(plain) > 18 then
         if not OceTip_IsLevelLine(plain) then
             return OceTip_StyleBody(text)
         end
@@ -3647,13 +3680,27 @@ local function OceTip_ConvertLine(text)
 end
 
 local function OceTip_RescanLines(tip)
-    -- тихий допис: якщо щось все ж потрапило англійською (SetText тощо)
     if not tip or not tip.NumLines or not tip.GetName then return end
     if tip._oceua_scanning then return end
-    tip._oceua_scanning = true
     local tname = tip:GetName()
     local n = tip:NumLines() or 0
+    if n < 1 then return end
+    -- швидка перевірка: чи є взагалі квестові маркери (інакше — вихід, без ривків на предметах)
+    local hasQuest = false
     local i
+    for i = 1, n do
+        local fs = getglobal(tname .. "TextLeft" .. i)
+        if fs and fs.GetText then
+            local tx = fs:GetText() or ""
+            if string.find(tx, "%[!%]") or string.find(tx, "%[%?%]") then
+                hasQuest = true
+                break
+            end
+        end
+    end
+    if not hasQuest then return end
+
+    tip._oceua_scanning = true
     for i = 1, n do
         local fs = getglobal(tname .. "TextLeft" .. i)
         if fs and fs.GetText and fs.SetText then
