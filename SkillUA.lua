@@ -1835,6 +1835,18 @@ local function TooltipSignature(tip)
   return table.concat(parts, "|")
 end
 
+
+-- Чи тултіп ще англійською (перший рядок без кирилиці)?
+local function TooltipNeedsUA(tooltip)
+  if not tooltip or not tooltip.GetName then return false end
+  local fs = getglobal(tooltip:GetName() .. "TextLeft1")
+  if not fs or not fs.GetText then return false end
+  local tx = fs:GetText()
+  if not tx or tx == "" then return false end
+  if HasCyrillic(tx) then return false end
+  return true
+end
+
 local function ProcessTooltip(tooltip)
   if not SkillEnabled() then return end
   if not tooltip or not tooltip:IsVisible() then return end
@@ -1844,6 +1856,17 @@ local function ProcessTooltip(tooltip)
     return
   end
   if tooltip.oceDone then return end
+  -- вже українською — не чіпати (анти-цикл екіп/сумки)
+  if not TooltipNeedsUA(tooltip) then
+    tooltip.oceDone = true
+    return
+  end
+  local now = GetTime and GetTime() or 0
+  local gap = tooltip.oceItemTip and 0.03 or 0.12
+  if tooltip.oceLastProc and (now - tooltip.oceLastProc) < gap then
+    return
+  end
+  tooltip.oceLastProc = now
   tooltip.oceDone = true
 
   hasAnyTranslation = false
@@ -1861,7 +1884,7 @@ local function ProcessTooltip(tooltip)
         if ok and newT and newT ~= t then
           hasAnyTranslation = true
           -- перший рядок = назва: UA зверху, сірий EN знизу (зручно для АГ)
-          if i == 1 and SkillShowOriginal() then
+          if i == 1 and SkillShowOriginal() and not tooltip.oceItemTip then
             local eng = StripCodes(t)
             -- не дублювати, якщо вже однакове / дуже довгий опис
             if eng and eng ~= "" and string.len(eng) <= 60 and eng ~= StripCodes(newT) then
@@ -2377,70 +2400,642 @@ local function TranslateToolsList(text)
   return text, false
 end
 
+local PROF_UI_UA = {
+  ["Reagents:"] = "Реагенти:",
+  ["Reagents"] = "Реагенти",
+  ["Requires:"] = "Потрібно:",
+  ["Requires"] = "Потрібно",
+  ["Create"] = "Створити",
+  ["Create All"] = "Створити всі",
+  ["Exit"] = "Вийти",
+  ["Cancel"] = "Скасувати",
+  ["Close"] = "Закрити",
+  ["Have materials"] = "Є матеріали",
+  ["Have Materials"] = "Є матеріали",
+  ["Improves skill"] = "Підвищує навик",
+  ["Improves Skill"] = "Підвищує навик",
+  ["All"] = "Усі",
+  ["All Subclasses"] = "Усі підкласи",
+  ["All subclasses"] = "Усі підкласи",
+  ["All Slots"] = "Усі слоти",
+  ["All slots"] = "Усі слоти",
+  ["Search"] = "Пошук",
+  ["Available"] = "Доступні",
+  ["Unavailable"] = "Недоступні",
+  ["Previous"] = "Назад",
+  ["Next"] = "Далі",
+  -- категорії / типи
+  ["Consumable"] = "Витратне",
+  ["Consumables"] = "Витратне",
+  ["Cloth"] = "Тканина",
+  ["Leather"] = "Шкіра",
+  ["Mail"] = "Кольчуга",
+  ["Plate"] = "Лати",
+  ["Trade Goods"] = "Господарські товари",
+  ["Miscellaneous"] = "Різне",
+  ["Weapon"] = "Зброя",
+  ["Weapons"] = "Зброя",
+  ["Armor"] = "Броня",
+  ["Bag"] = "Сумка",
+  ["Bags"] = "Сумки",
+  ["Device"] = "Пристрій",
+  ["Devices"] = "Пристрої",
+  ["Explosive"] = "Вибухівка",
+  ["Explosives"] = "Вибухівка",
+  ["Part"] = "Деталь",
+  ["Parts"] = "Деталі",
+  ["Elemental"] = "Стихія",
+  ["Enchanting"] = "Накладання чар",
+  ["Potion"] = "Зілля",
+  ["Elixir"] = "Еліксир",
+  ["Flask"] = "Настій",
+  ["Bandage"] = "Бинт",
+  ["Food"] = "Їжа",
+  ["Drink"] = "Напій",
+  ["Material"] = "Матеріал",
+  ["Materials"] = "Матеріали",
+  ["Other"] = "Інше",
+  ["Quest"] = "Квест",
+  ["Recipe"] = "Рецепт",
+  ["Recipes"] = "Рецепти",
+  ["Scope"] = "Приціл",
+  ["Shield"] = "Щит",
+  ["Staff"] = "Посох",
+  ["Wand"] = "Жезл",
+  ["Gun"] = "Рушниця",
+  ["Bow"] = "Лук",
+  ["Crossbow"] = "Арбалет",
+  ["Thrown"] = "Метальна",
+  ["Fist Weapon"] = "Кулачна зброя",
+  ["Dagger"] = "Кинджал",
+  ["Sword"] = "Меч",
+  ["Axe"] = "Сокира",
+  ["Mace"] = "Булава",
+  ["Polearm"] = "Дібрівна",
+  ["One-Hand"] = "Одноручне",
+  ["Two-Hand"] = "Дворучне",
+  ["Main Hand"] = "Права рука",
+  ["Off Hand"] = "Ліва рука",
+  ["Held In Off-hand"] = "В лівій руці",
+  ["Head"] = "Голова",
+  ["Neck"] = "Шия",
+  ["Shoulder"] = "Плечі",
+  ["Back"] = "Спина",
+  ["Chest"] = "Груди",
+  ["Wrist"] = "Зап'ястя",
+  ["Hands"] = "Руки",
+  ["Waist"] = "Пояс",
+  ["Legs"] = "Ноги",
+  ["Feet"] = "Ступні",
+  ["Finger"] = "Палець",
+  ["Trinket"] = "Аксесуар",
+  ["Ranged"] = "Дальній бій",
+  ["Projectile"] = "Снаряд",
+  ["Quiver"] = "Колчан",
+  ["Ammo Pouch"] = "Підсумок",
+}
+
+local function LookupProfItemName(en)
+  if not en or en == "" then return nil end
+  en = string.gsub(en, "|c%x%x%x%x%x%x%x%x", "")
+  en = string.gsub(en, "|r", "")
+  en = string.gsub(en, "^%s+", "")
+  en = string.gsub(en, "%s+$", "")
+  if en == "" or HasCyrillic(en) then return nil end
+
+  -- UI fixed
+  if PROF_UI_UA[en] then return PROF_UI_UA[en] end
+
+  -- "Name [4]" / "Name (4)" / "Name x4"
+  local base, suffix = en, ""
+  local _, _, b1, s1 = string.find(en, "^(.-)%s*(%[%d+%])%s*$")
+  if b1 then base, suffix = b1, " " .. s1 end
+  if not b1 then
+    local _, _, b2, s2 = string.find(en, "^(.-)%s*(%(%d+%))%s*$")
+    if b2 then base, suffix = b2, " " .. s2 end
+  end
+  base = string.gsub(base, "%s+$", "")
+
+  local dict = OceUA_Item_Dictionary
+  local rec = OceUA_Recipes_Dictionary
+  local ua = nil
+  if dict then ua = dict[base] or dict[en] end
+  if (not ua or ua == "") and rec then ua = rec[base] or rec[en] end
+  if (not ua or ua == "") and LookupCategoryExact then
+    ua = LookupCategoryExact(string.lower(base), base)
+  end
+  if ua and ua ~= "" and ua ~= base and ua ~= en then
+    return ua .. suffix
+  end
+
+  -- "Profession N/M"  e.g. Leatherworking 1/75
+  local _, _, pname, cur, maxv = string.find(en, "^([%a%s%'%-]+)%s+(%d+)%s*/%s*(%d+)$")
+  if pname and cur and maxv then
+    pname = string.gsub(pname, "%s+$", "")
+    local pua = PROF_UI_UA[pname]
+    if not pua and OceUA_Profession_Names then pua = OceUA_Profession_Names[pname] end
+    if not pua and dict then pua = dict[pname] end
+    if pua then return pua .. " " .. cur .. "/" .. maxv end
+  end
+
+  return nil
+end
+
+local function SetFSTextUA(fs)
+  if not fs or not fs.GetText or not fs.SetText then return end
+  if fs.IsVisible and not fs:IsVisible() then return end
+  local tx = fs:GetText()
+  if not tx or tx == "" then return end
+  local plain = StripCodes(tx)
+  if plain == "" or HasCyrillic(plain) then return end
+  local ua = LookupProfItemName(plain)
+  if not ua then
+    -- TranslateFontString / dict fallback
+    local newT, ok = TranslateItemLine(plain)
+    if ok and newT then ua = newT end
+  end
+  if not ua then
+    local newT, ok = TranslateText(plain)
+    if ok and newT then ua = newT end
+  end
+  if ua and ua ~= plain then
+    local _, _, pref = string.find(tx, "^(|c%x%x%x%x%x%x%x%x)")
+    if pref then
+      fs:SetText(pref .. ua .. "|r")
+    else
+      fs:SetText(ua)
+    end
+  end
+end
+
+local function WalkFrameFonts(frame, depth)
+  if not frame or depth > 10 then return end
+  if frame.GetRegions then
+    local regs = { frame:GetRegions() }
+    local i
+    for i = 1, table.getn(regs) do
+      local r = regs[i]
+      if r and r.GetObjectType and r:GetObjectType() == "FontString" then
+        SetFSTextUA(r)
+      end
+    end
+  end
+  if frame.GetChildren then
+    local kids = { frame:GetChildren() }
+    local i
+    for i = 1, table.getn(kids) do
+      WalkFrameFonts(kids[i], depth + 1)
+    end
+  end
+end
+
+local function ProcessTradeSkillList()
+  if not TradeSkillFrame or not TradeSkillFrame:IsVisible() then return end
+  local i
+  for i = 1, 50 do
+    SetFSTextUA(getglobal("TradeSkillSkill" .. i))
+    SetFSTextUA(getglobal("TradeSkillSkill" .. i .. "Text"))
+    local btn = getglobal("TradeSkillSkill" .. i)
+    if btn and btn.GetRegions then
+      local regs = { btn:GetRegions() }
+      local ri
+      for ri = 1, table.getn(regs) do
+        local r = regs[ri]
+        if r and r.GetObjectType and r:GetObjectType() == "FontString" then
+          SetFSTextUA(r)
+        end
+      end
+    end
+  end
+  SetFSTextUA(TradeSkillFrameTitleText)
+  SetFSTextUA(TradeSkillRankFrameSkillName)
+  SetFSTextUA(TradeSkillRankFrameTitleText)
+end
+
+local function ProcessCraftList()
+  if not CraftFrame or not CraftFrame:IsVisible() then return end
+  local i
+  for i = 1, 50 do
+    SetFSTextUA(getglobal("Craft" .. i))
+    SetFSTextUA(getglobal("Craft" .. i .. "Text"))
+  end
+end
+
 local function ProcessTradeSkillDetails()
   if not SkillEnabled() then return end
 
   if TradeSkillFrame and TradeSkillFrame:IsVisible() then
-    TranslateFontString(TradeSkillSkillName)
-    TranslateFontString(TradeSkillDescription)
-    -- 1.12: правильні імена — RequirementLabel + RequirementText (НЕ SkillRequirement)
-    if TradeSkillRequirementLabel then
-      local t = TradeSkillRequirementLabel:GetText()
-      if t and not HasCyrillic(t) then
-        local low = string.lower(t)
-        if low == "requires" or low == "requires:" or t == "Requires" or t == "Requires:" then
-          TradeSkillRequirementLabel:SetText("Потрібно:")
-        else
-          TranslateFontString(TradeSkillRequirementLabel)
-        end
-      end
+    -- повний обхід усього вікна (фільтри, список, кнопки, реагенти)
+    WalkFrameFonts(TradeSkillFrame, 0)
+    ProcessTradeSkillList()
+
+    SetFSTextUA(TradeSkillSkillName)
+    SetFSTextUA(TradeSkillDescription)
+    SetFSTextUA(TradeSkillRequirementLabel)
+    SetFSTextUA(TradeSkillRequirementText)
+    SetFSTextUA(TradeSkillSkillRequirement)
+    SetFSTextUA(TradeSkillReagentLabel)
+    SetFSTextUA(TradeSkillCreateButton)
+    SetFSTextUA(TradeSkillCreateAllButton)
+    SetFSTextUA(TradeSkillCancelButton)
+    SetFSTextUA(TradeSkillExitButton)
+
+    -- реагенти 1..8
+    local ri
+    for ri = 1, 8 do
+      SetFSTextUA(getglobal("TradeSkillReagent" .. ri .. "Name"))
+      SetFSTextUA(getglobal("TradeSkillReagent" .. ri .. "Count"))
+      local rg = getglobal("TradeSkillReagent" .. ri)
+      if rg then WalkFrameFonts(rg, 0) end
     end
-    if TradeSkillRequirementText then
-      local t = TradeSkillRequirementText:GetText()
-      if t and t ~= "" and not HasCyrillic(t) then
-        local newT, ok = TranslateToolsList(t)
-        if not ok then newT, ok = TranslateItemLine(t) end
-        if not ok then newT, ok = TranslateText(t) end
-        if ok and newT and newT ~= t then
-          TradeSkillRequirementText:SetText(newT)
-        end
-      end
+
+    -- інколи прогрес-бар: "Leatherworking 1/75"
+    if TradeSkillRankFrame and TradeSkillRankFrame.GetRegions then
+      WalkFrameFonts(TradeSkillRankFrame, 0)
     end
-    -- старі/кастомні імена на всяк випадок
-    if TradeSkillSkillRequirement then TranslateFontString(TradeSkillSkillRequirement) end
   end
 
   if CraftFrame and CraftFrame:IsVisible() then
-    TranslateFontString(CraftName)
-    TranslateFontString(CraftDescription)
-    if CraftRequirements then
-      local t = CraftRequirements:GetText()
-      if t and t ~= "" and not HasCyrillic(t) then
-        local newT, ok = TranslateItemLine(t)
-        if not ok then newT, ok = TranslateToolsList(t) end
-        if not ok then newT, ok = TranslateText(t) end
-        if ok and newT and newT ~= t then CraftRequirements:SetText(newT) end
-      end
-    end
-    if CraftRequirementLabel then
-      local t = CraftRequirementLabel:GetText()
-      if t and not HasCyrillic(t) then
-        local low = string.lower(t or "")
-        if low == "requires" or low == "requires:" then
-          CraftRequirementLabel:SetText("Потрібно:")
-        end
-      end
-    end
-    if CraftRequirementText then
-      local t = CraftRequirementText:GetText()
-      if t and t ~= "" and not HasCyrillic(t) then
-        local newT, ok = TranslateToolsList(t)
-        if not ok then newT, ok = TranslateItemLine(t) end
-        if ok and newT then CraftRequirementText:SetText(newT) end
-      end
+    WalkFrameFonts(CraftFrame, 0)
+    ProcessCraftList()
+    SetFSTextUA(CraftName)
+    SetFSTextUA(CraftDescription)
+    SetFSTextUA(CraftRequirements)
+    SetFSTextUA(CraftRequirementLabel)
+    SetFSTextUA(CraftRequirementText)
+    SetFSTextUA(CraftCreateButton)
+    SetFSTextUA(CraftCancelButton)
+    local ri
+    for ri = 1, 8 do
+      SetFSTextUA(getglobal("CraftReagent" .. ri .. "Name"))
+      local rg = getglobal("CraftReagent" .. ri)
+      if rg then WalkFrameFonts(rg, 0) end
     end
   end
 end
+
+
+-- ============================================================
+-- Character Info (вкладки Character / Reputation / Skills / PvP)
+-- ============================================================
+local CHAR_UI_UA = {
+  -- вкладки
+  ["Character"] = "Персонаж",
+  ["Reputation"] = "Репутація",
+  ["Skills"] = "Навички",
+  ["PvP"] = "PvP",
+  -- Character
+  ["Strength:"] = "Сила:",
+  ["Strength"] = "Сила",
+  ["Agility:"] = "Спритність:",
+  ["Agility"] = "Спритність",
+  ["Stamina:"] = "Витривалість:",
+  ["Stamina"] = "Витривалість",
+  ["Intellect:"] = "Інтелект:",
+  ["Intellect"] = "Інтелект",
+  ["Spirit:"] = "Дух:",
+  ["Spirit"] = "Дух",
+  ["Armor:"] = "Броня:",
+  ["Armor"] = "Броня",
+  ["Melee Attack"] = "Ближній бій",
+  ["Ranged Attack"] = "Дальній бій",
+  ["Power:"] = "Потужність:",
+  ["Power"] = "Потужність",
+  ["Damage:"] = "Шкода:",
+  ["Damage"] = "Шкода",
+  ["Attack Power"] = "Сила атаки",
+  ["Attack Power:"] = "Сила атаки:",
+  ["Defense:"] = "Захист:",
+  ["Defense"] = "Захист",
+  ["Resists"] = "Опір",
+  ["Resistance"] = "Опір",
+  ["Health"] = "Здоров'я",
+  ["Mana"] = "Мана",
+  ["Rage"] = "Лють",
+  ["Energy"] = "Енергія",
+  ["Focus"] = "Концентрація",
+  -- Reputation
+  ["Faction"] = "Фракція",
+  ["Standing"] = "Статус",
+  ["Alliance"] = "Альянс",
+  ["Horde"] = "Орда",
+  ["Hated"] = "Ненависть",
+  ["Hostile"] = "Ворожість",
+  ["Unfriendly"] = "Неприязнь",
+  ["Neutral"] = "Байдужість",
+  ["Friendly"] = "Дружба",
+  ["Honored"] = "Повага",
+  ["Revered"] = "Шанування",
+  ["Exalted"] = "Піднесення",
+  -- Skills headers
+  ["Class Skills"] = "Класові навички",
+  ["Professions"] = "Професії",
+  ["Secondary Skills"] = "Додаткові навички",
+  ["Weapon Skills"] = "Навички зброї",
+  ["Armor Skills"] = "Навички броні",
+  ["Languages"] = "Мови",
+  ["All"] = "Усі",
+  ["Close"] = "Закрити",
+  -- Weapon / skill names
+  ["Axes"] = "Сокири",
+  ["Swords"] = "Мечі",
+  ["Maces"] = "Булави",
+  ["Daggers"] = "Кинджали",
+  ["Bows"] = "Луки",
+  ["Crossbows"] = "Арбалети",
+  ["Guns"] = "Рушниці",
+  ["Thrown"] = "Метальна",
+  ["Staves"] = "Посохи",
+  ["Polearms"] = "Дібрівна",
+  ["Fist Weapons"] = "Кулачна зброя",
+  ["Wands"] = "Жезли",
+  ["Unarmed"] = "Без зброї",
+  ["Defense"] = "Захист",
+  ["Beast Mastery"] = "Влада над звірами",
+  ["Marksmanship"] = "Стрільба",
+  ["Survival"] = "Виживання",
+  ["Arms"] = "Зброя",
+  ["Fury"] = "Лють",
+  ["Protection"] = "Захист",
+  ["Holy"] = "Світло",
+  ["Discipline"] = "Дисципліна",
+  ["Shadow"] = "Тінь",
+  ["Elemental"] = "Стихія",
+  ["Enhancement"] = "Вдосконалення",
+  ["Restoration"] = "Відновлення",
+  ["Affliction"] = "Страждання",
+  ["Demonology"] = "Демонологія",
+  ["Destruction"] = "Руйнування",
+  ["Arcane"] = "Таємна магія",
+  ["Fire"] = "Вогонь",
+  ["Frost"] = "Крига",
+  ["Balance"] = "Баланс",
+  ["Feral Combat"] = "Сила звіра",
+  ["Retribution"] = "Відплата",
+  ["Subtlety"] = "Тонкість",
+  ["Assassination"] = "Вбивство",
+  ["Combat"] = "Бій",
+  -- Secondary
+  ["Cooking"] = "Кулінарія",
+  ["First Aid"] = "Перша допомога",
+  ["Fishing"] = "Риболовля",
+  ["Riding"] = "Верхова їзда",
+  -- PvP
+  ["Honor"] = "Честь",
+  ["Arena"] = "Арена",
+  ["Today"] = "Сьогодні",
+  ["Yesterday"] = "Вчора",
+  ["This Week"] = "Цього тижня",
+  ["Last Week"] = "Минулого тижня",
+  ["Lifetime"] = "За весь час",
+  ["Honorable Kills"] = "Почесні вбивства",
+  ["Dishonorable Kills"] = "Безчесні вбивства",
+  ["Highest Rank"] = "Найвищий ранг",
+  ["None"] = "Немає",
+  ["Rank"] = "Ранг",
+  -- races / classes short (для "Level N Race Class")
+  ["Human"] = "Людина",
+  ["Dwarf"] = "Дворф",
+  ["Night Elf"] = "Нічний ельф",
+  ["Gnome"] = "Гном",
+  ["Orc"] = "Орк",
+  ["Undead"] = "Нежить",
+  ["Tauren"] = "Таурен",
+  ["Troll"] = "Троль",
+  ["High Elf"] = "Вищий ельф",
+  ["Goblin"] = "Гоблін",
+  ["Warrior"] = "Воїн",
+  ["Paladin"] = "Паладин",
+  ["Hunter"] = "Мисливець",
+  ["Rogue"] = "Розбійник",
+  ["Priest"] = "Жрець",
+  ["Shaman"] = "Шаман",
+  ["Mage"] = "Маг",
+  ["Warlock"] = "Чорнокнижник",
+  ["Druid"] = "Друїд",
+}
+
+CHAR_UI_UA["Beast Mastery"] = "Влада над звірами"
+
+local function LookupCharUI(en)
+  if not en or en == "" then return nil end
+  en = string.gsub(en, "|c%x%x%x%x%x%x%x%x", "")
+  en = string.gsub(en, "|r", "")
+  en = string.gsub(en, "^%s+", "")
+  en = string.gsub(en, "%s+$", "")
+  if en == "" or HasCyrillic(en) then return nil end
+
+  if CHAR_UI_UA[en] then return CHAR_UI_UA[en] end
+
+  -- "Level 5 Human Hunter"
+  local _, _, lvl, rest = string.find(en, "^Level (%d+)%s+(.+)$")
+  if lvl and rest then
+    local parts = {}
+    local iter = string.gmatch or string.gfind
+    for w in iter(rest, "%S+") do
+      table.insert(parts, CHAR_UI_UA[w] or w)
+    end
+    -- multi-word race "Night Elf"
+    local r2 = rest
+    for eng, ua in pairs(CHAR_UI_UA) do
+      if string.find(eng, " ") and string.find(r2, eng, 1, true) then
+        r2 = string.gsub(r2, eng, ua, 1)
+      end
+    end
+    if r2 ~= rest then
+      return "Рівень " .. lvl .. " " .. r2
+    end
+    local out = "Рівень " .. lvl
+    local i
+    for i = 1, table.getn(parts) do
+      out = out .. " " .. parts[i]
+    end
+    return out
+  end
+
+  -- "None (Rank 0)"
+  local _, _, rank = string.find(en, "^None %(Rank (%d+)%)$")
+  if rank then return "Немає (Ранг " .. rank .. ")" end
+  local _, _, rank2 = string.find(en, "^None %(Rank (%d+)%)$")
+
+  -- "SkillName  7/75" or "SkillName 7/75"
+  local _, _, sname, cur, maxv = string.find(en, "^([%a%s%'%-]+)%s+(%d+)%s*/%s*(%d+)$")
+  if sname and cur and maxv then
+    sname = string.gsub(sname, "%s+$", "")
+    local sua = CHAR_UI_UA[sname]
+    if not sua and OceUA_Profession_Names then sua = OceUA_Profession_Names[sname] end
+    if not sua and LookupCategoryExact then
+      sua = LookupCategoryExact(string.lower(sname), sname)
+    end
+    if sua then return sua .. " " .. cur .. "/" .. maxv end
+  end
+
+  -- faction / skill exact from dicts
+  if OceUA_Profession_Names and OceUA_Profession_Names[en] then
+    return OceUA_Profession_Names[en]
+  end
+  if LookupCategoryExact then
+    local ua = LookupCategoryExact(string.lower(en), en)
+    if ua then return ua end
+  end
+  -- faction names often in Signs or NPC names - try Reputation is just standings
+  return nil
+end
+
+local function SetCharFS(fs)
+  if not fs or not fs.GetText or not fs.SetText then return end
+  local tx = fs:GetText()
+  if not tx or tx == "" then return end
+  local plain = StripCodes(tx)
+  if plain == "" then return end
+  -- прибрати вже наліплене помилкове «сек» після чисел
+  if string.find(plain, "^[%d%s%-%./]+%s*сек%s*$") then
+    local cleaned = string.gsub(plain, "%s*сек%s*$", "")
+    cleaned = string.gsub(cleaned, "%s+$", "")
+    if cleaned ~= plain then fs:SetText(cleaned) end
+    return
+  end
+  if HasCyrillic(plain) then return end
+  -- числа / діапазони шкоди ("22", "6 - 9", "14 - 18") — НЕ чіпати
+  if string.find(plain, "^[%d%s%-%./+:]+$") then return end
+  local ua = LookupCharUI(plain)
+  -- TranslateText на коротких значеннях небезпечний — лише словник UI
+  if ua and ua ~= plain then
+    local _, _, pref = string.find(tx, "^(|c%x%x%x%x%x%x%x%x)")
+    if pref then fs:SetText(pref .. ua .. "|r")
+    else fs:SetText(ua) end
+  end
+end
+
+local function WalkCharFonts(frame, depth)
+  if not frame or (depth and depth > 12) then return end
+  depth = depth or 0
+  if frame.GetRegions then
+    local regs = { frame:GetRegions() }
+    local i
+    for i = 1, table.getn(regs) do
+      local r = regs[i]
+      if r and r.GetObjectType and r:GetObjectType() == "FontString" then
+        SetCharFS(r)
+      end
+    end
+  end
+  if frame.GetChildren then
+    local kids = { frame:GetChildren() }
+    local i
+    for i = 1, table.getn(kids) do
+      WalkCharFonts(kids[i], depth + 1)
+    end
+  end
+end
+
+local function ProcessCharacterFrame()
+  if not SkillEnabled() then return end
+  if not CharacterFrame or not CharacterFrame:IsVisible() then return end
+
+  WalkCharFonts(CharacterFrame, 0)
+
+  -- відомі підфрейми 1.12
+  if PaperDollFrame then WalkCharFonts(PaperDollFrame, 0) end
+  if ReputationFrame then WalkCharFonts(ReputationFrame, 0) end
+  if SkillFrame then WalkCharFonts(SkillFrame, 0) end
+  if PVPFrame then WalkCharFonts(PVPFrame, 0) end
+  if HonorFrame then WalkCharFonts(HonorFrame, 0) end
+  if CharacterAttributesFrame then WalkCharFonts(CharacterAttributesFrame, 0) end
+  if CharacterResistanceFrame then WalkCharFonts(CharacterResistanceFrame, 0) end
+
+  -- рівень / ім'я
+  SetCharFS(CharacterNameText)
+  SetCharFS(CharacterLevelText)
+  SetCharFS(CharacterTitleText)
+
+  -- вкладки внизу
+  local i
+  for i = 1, 5 do
+    SetCharFS(getglobal("CharacterFrameTab" .. i .. "Text"))
+    local tab = getglobal("CharacterFrameTab" .. i)
+    if tab then WalkCharFonts(tab, 0) end
+  end
+
+  -- Skill list buttons
+  for i = 1, 20 do
+    SetCharFS(getglobal("SkillTypeLabel" .. i))
+    SetCharFS(getglobal("SkillRankFrame" .. i .. "SkillName"))
+    SetCharFS(getglobal("SkillRankFrame" .. i .. "SkillRank"))
+    local sk = getglobal("SkillRankFrame" .. i)
+    if sk then WalkCharFonts(sk, 0) end
+  end
+
+  -- Reputation bars
+  for i = 1, 15 do
+    SetCharFS(getglobal("ReputationBar" .. i .. "FactionName"))
+    SetCharFS(getglobal("ReputationBar" .. i .. "FactionStanding"))
+    local rb = getglobal("ReputationBar" .. i)
+    if rb then WalkCharFonts(rb, 0) end
+  end
+end
+
+local charHooked = false
+local function HookCharacterFrame()
+  if charHooked then return end
+  if not CharacterFrame then return end
+  charHooked = true
+  local oldShow = CharacterFrame:GetScript("OnShow")
+  CharacterFrame:SetScript("OnShow", function()
+    if oldShow then oldShow() end
+    ProcessCharacterFrame()
+  end)
+  -- оновлення вкладок
+  if CharacterFrame_ShowSubFrame then
+    local old = CharacterFrame_ShowSubFrame
+    CharacterFrame_ShowSubFrame = function(a1, a2, a3, a4)
+      old(a1, a2, a3, a4)
+      ProcessCharacterFrame()
+    end
+  end
+  if PaperDollFrame_OnShow then
+    local old = PaperDollFrame_OnShow
+    PaperDollFrame_OnShow = function(a1, a2, a3, a4)
+      old(a1, a2, a3, a4)
+      ProcessCharacterFrame()
+    end
+  end
+  if ReputationFrame_Update then
+    local old = ReputationFrame_Update
+    ReputationFrame_Update = function(a1, a2, a3, a4)
+      old(a1, a2, a3, a4)
+      ProcessCharacterFrame()
+    end
+  end
+  if SkillFrame_UpdateSkills then
+    local old = SkillFrame_UpdateSkills
+    SkillFrame_UpdateSkills = function(a1, a2, a3, a4)
+      old(a1, a2, a3, a4)
+      ProcessCharacterFrame()
+    end
+  end
+  if SkillFrame_Update then
+    local old = SkillFrame_Update
+    SkillFrame_Update = function(a1, a2, a3, a4)
+      old(a1, a2, a3, a4)
+      ProcessCharacterFrame()
+    end
+  end
+end
+
+local charEvents = CreateFrame("Frame")
+charEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
+charEvents:RegisterEvent("UNIT_LEVEL")
+charEvents:RegisterEvent("CHARACTER_POINTS_CHANGED")
+charEvents:RegisterEvent("PLAYER_PVP_KILLS_CHANGED")
+charEvents:RegisterEvent("PLAYER_PVP_RANK_CHANGED")
+charEvents:SetScript("OnEvent", function()
+  HookCharacterFrame()
+  if CharacterFrame and CharacterFrame:IsVisible() then
+    ProcessCharacterFrame()
+  end
+end)
+HookCharacterFrame()
 
 -- ============================================================
 -- Хуки GameTooltip
@@ -2580,7 +3175,16 @@ local function HookTooltipMethods()
       currentSpellRank = nil
       currentSpellID   = nil
       local r1, r2, r3 = oldFunc(self, a1, a2)
-      MarkPending(self)
+      self.oceItemTip = true
+      local key = tostring(a1) .. ":" .. tostring(a2)
+      if self.oceInvKey ~= key then
+        self.oceInvKey = key
+        self.oceDone = nil
+        self.oceLastProc = nil
+      end
+      self.oceDone = nil
+      ProcessTooltip(self)
+      self.ocePending = nil
       return r1, r2, r3
     end
   end
@@ -2590,7 +3194,16 @@ local function HookTooltipMethods()
       currentSpellRank = nil
       currentSpellID   = nil
       local r1, r2, r3 = oldFunc(self, a1)
-      MarkPending(self)
+      self.oceItemTip = true
+      local key = "1:" .. tostring(a1)
+      if self.oceInvKey ~= key then
+        self.oceInvKey = key
+        self.oceDone = nil
+        self.oceLastProc = nil
+      end
+      self.oceDone = nil
+      ProcessTooltip(self)
+      self.ocePending = nil
       return r1, r2, r3
     end
   end
@@ -2675,13 +3288,15 @@ local function HookTooltipMethods()
     if oldOnUpdate then oldOnUpdate() end
     if not this:IsVisible() then return end
 
-    local sig = TooltipSignature(this)
-    if this.ocePending or (sig ~= "" and sig ~= this.oceLastSig) then
+    if this.oceItemTip then
+      if TooltipNeedsUA(this) then
+        this.oceDone = nil
+        ProcessTooltip(this)
+      end
+    elseif this.ocePending or TooltipNeedsUA(this) then
       this.ocePending = nil
-      this.oceLastSig = sig
       this.oceDone = nil
       ProcessTooltip(this)
-      -- після перекладу оновити сигнатуру (вже UA), щоб не ганяти кожен кадр
       this.oceLastSig = TooltipSignature(this)
     end
 
@@ -2709,6 +3324,9 @@ local function HookTooltipMethods()
     this.oceDone = nil
     this.oceLastSig = nil
     this.oceShiftEquip = nil
+    this.oceItemTip = nil
+    this.oceInvKey = nil
+    this.oceLastProc = nil
     if oldOnHide then oldOnHide() end
   end)
 
@@ -2721,9 +3339,8 @@ local function HookTooltipMethods()
       if oldUp then oldUp() end
       if not this:IsVisible() then return end
       local sig = TooltipSignature(this)
-      if this.ocePending or (sig ~= "" and sig ~= this.oceLastSig) then
+      if this.ocePending or TooltipNeedsUA(this) then
         this.ocePending = nil
-        this.oceLastSig = sig
         this.oceDone = nil
         ProcessTooltip(this)
         this.oceLastSig = TooltipSignature(this)
@@ -2790,8 +3407,12 @@ local function HookTooltipMethods()
   -- Окремий фрейм в кінці черги OnUpdate — добиває переклад після Shagu
   if not OceUA_ShopFixFrame then
     local shopFix = CreateFrame("Frame", "OceUA_ShopFixFrame")
+    shopFix.acc = 0
     shopFix:SetScript("OnUpdate", function()
       if not SkillEnabled() then return end
+      this.acc = (this.acc or 0) + (arg1 or 0.03)
+      if this.acc < 0.10 then return end
+      this.acc = 0
       if ShoppingTooltip1 and ShoppingTooltip1:IsVisible() then
         ProcessShoppingTooltip(ShoppingTooltip1)
       end
@@ -2868,17 +3489,13 @@ local function HookFrames()
     TradeSkillFrame_SetSelection = function(id)
       old(id)
       ProcessTradeSkillDetails()
-      -- текст вимог інколи ставиться з затримкою — повторити
-      if GetTime then
-        local t0 = GetTime()
-        local f = CreateFrame("Frame")
-        f:SetScript("OnUpdate", function()
-          if GetTime() - t0 >= 0.05 then
-            ProcessTradeSkillDetails()
-            f:SetScript("OnUpdate", nil)
-          end
-        end)
-      end
+    end
+  end
+  if TradeSkillFrame_Update then
+    local oldU = TradeSkillFrame_Update
+    TradeSkillFrame_Update = function(a1, a2, a3, a4)
+      oldU(a1, a2, a3, a4)
+      ProcessTradeSkillDetails()
     end
   end
   if TradeSkillFrame then
@@ -2896,6 +3513,20 @@ local function HookFrames()
       old(id)
       ProcessTradeSkillDetails()
     end
+  end
+  if CraftFrame_Update then
+    local oldCU = CraftFrame_Update
+    CraftFrame_Update = function(a1, a2, a3, a4)
+      oldCU(a1, a2, a3, a4)
+      ProcessTradeSkillDetails()
+    end
+  end
+  if CraftFrame then
+    local oldCS = CraftFrame:GetScript("OnShow")
+    CraftFrame:SetScript("OnShow", function()
+      if oldCS then oldCS() end
+      ProcessTradeSkillDetails()
+    end)
   end
 end
 
@@ -2928,19 +3559,19 @@ tipWatcher:SetScript("OnUpdate", function()
     end
     return
   end
-  local sig = TooltipSignature(GameTooltip)
-  if sig ~= "" and sig ~= GameTooltip.oceLastSig then
-    GameTooltip.oceDone = nil
-    GameTooltip.oceLastSig = sig
-    ProcessTooltip(GameTooltip)
-    GameTooltip.oceLastSig = TooltipSignature(GameTooltip)
+  local charOpen = CharacterFrame and CharacterFrame:IsVisible()
+  if not charOpen then
+    if GameTooltip.ocePending or TooltipNeedsUA(GameTooltip) then
+      GameTooltip.ocePending = nil
+      GameTooltip.oceDone = nil
+      ProcessTooltip(GameTooltip)
+      GameTooltip.oceLastSig = TooltipSignature(GameTooltip)
+    end
   end
-  -- ItemRefTooltip (лінки з чату)
   if ItemRefTooltip and ItemRefTooltip:IsVisible() then
-    local isig = TooltipSignature(ItemRefTooltip)
-    if isig ~= "" and isig ~= ItemRefTooltip.oceLastSig then
+    if ItemRefTooltip.ocePending or TooltipNeedsUA(ItemRefTooltip) then
+      ItemRefTooltip.ocePending = nil
       ItemRefTooltip.oceDone = nil
-      ItemRefTooltip.oceLastSig = isig
       ProcessTooltip(ItemRefTooltip)
       ItemRefTooltip.oceLastSig = TooltipSignature(ItemRefTooltip)
     end
@@ -2953,6 +3584,7 @@ eventFrame:SetScript("OnEvent", function()
     HookTooltipMethods()
     -- фрейми тренера/професій можуть вантажитись пізніше
     HookFrames()
+    if HookCharacterFrame then HookCharacterFrame() end
     DEFAULT_CHAT_FRAME:AddMessage("|cffb266ffOce|rUA v" .. VERSION .. " — квести, діалоги, книги, скіли, предмети | /oceua")
   elseif event == "TRAINER_SHOW" or event == "TRAINER_UPDATE" then
     HookFrames()
@@ -2963,6 +3595,199 @@ eventFrame:SetScript("OnEvent", function()
     ProcessTradeSkillDetails()
   end
 end)
+
+
+-- ============================================================
+-- Лут (LootFrame / GroupLoot) — назви предметів з Items_Dictionary
+-- ============================================================
+local function LookupItemUA(en)
+  if not en or en == "" then return nil end
+  en = string.gsub(en, "|c%x%x%x%x%x%x%x%x", "")
+  en = string.gsub(en, "|r", "")
+  en = string.gsub(en, "|T.-|t", "")
+  en = string.gsub(en, "^%s+", "")
+  en = string.gsub(en, "%s+$", "")
+  if en == "" then return nil end
+  if HasCyrillic(en) then return nil end
+  local dict = OceUA_Item_Dictionary
+  if not dict then return nil end
+  local ua = dict[en]
+  if ua and ua ~= "" and ua ~= en then return ua end
+  -- без суфіксу кількості "x2" / "(2)"
+  local base = string.gsub(en, "%s*[xX×]%s*%d+%s*$", "")
+  base = string.gsub(base, "%s*%(%d+%)%s*$", "")
+  if base ~= en then
+    ua = dict[base]
+    if ua and ua ~= "" then return ua end
+  end
+  return nil
+end
+
+local function TranslateItemFontString(fs)
+  if not fs or not fs.GetText or not fs.SetText then return end
+  local tx = fs:GetText()
+  if not tx or tx == "" then return end
+  local plain = StripCodes(tx)
+  if HasCyrillic(plain) then return end
+  local ua = LookupItemUA(plain)
+  if ua then
+    -- зберегти колір-коди префіксу, якщо були
+    local _, _, pref = string.find(tx, "^(|c%x%x%x%x%x%x%x%x)")
+    if pref then
+      fs:SetText(pref .. ua .. "|r")
+    else
+      fs:SetText(ua)
+    end
+  end
+end
+
+local function ProcessLootFrame()
+  if not SkillEnabled() then return end
+  -- стандартний LootFrame 1.12
+  if LootFrame and LootFrame:IsVisible() then
+    if LootFrameTitleText then
+      local tt = LootFrameTitleText:GetText()
+      if tt and not HasCyrillic(tt) then
+        if string.lower(tt) == "items" or tt == "Items" then
+          LootFrameTitleText:SetText("Предмети")
+        else
+          TranslateFontString(LootFrameTitleText)
+        end
+      end
+    end
+    local i
+    for i = 1, 8 do
+      TranslateItemFontString(getglobal("LootButton" .. i .. "Text"))
+      TranslateItemFontString(getglobal("LootButton" .. i .. "Name"))
+      local btn = getglobal("LootButton" .. i)
+      if btn then
+        -- іноді текст прямо на кнопці
+        if btn.GetText and btn.SetText then
+          local tx = btn:GetText()
+          if tx and not HasCyrillic(tx) then
+            local ua = LookupItemUA(StripCodes(tx))
+            if ua then btn:SetText(ua) end
+          end
+        end
+        -- обхід дітей-FontString
+        if btn.GetRegions then
+          local regs = { btn:GetRegions() }
+          local ri
+          for ri = 1, table.getn(regs) do
+            local r = regs[ri]
+            if r and r.GetObjectType and r:GetObjectType() == "FontString" then
+              TranslateItemFontString(r)
+            end
+          end
+        end
+      end
+    end
+  end
+  -- Need/Greed
+  local g
+  for g = 1, 4 do
+    TranslateItemFontString(getglobal("GroupLootFrame" .. g .. "Name"))
+    TranslateItemFontString(getglobal("GroupLootFrame" .. g .. "SlotLabel"))
+  end
+end
+
+local lootHooked = false
+local function HookLootFrame()
+  if lootHooked then return end
+  if not LootFrame then return end
+  lootHooked = true
+  local oldShow = LootFrame:GetScript("OnShow")
+  LootFrame:SetScript("OnShow", function()
+    if oldShow then oldShow() end
+    ProcessLootFrame()
+    -- один кадр пізніше (клієнт інколи ставить назви після OnShow)
+    local f = CreateFrame("Frame")
+    f.t = 0
+    f:SetScript("OnUpdate", function()
+      this.t = this.t + arg1
+      if this.t < 0.02 then return end
+      this:SetScript("OnUpdate", nil)
+      ProcessLootFrame()
+    end)
+  end)
+  -- хук оновлення слота
+  if LootFrame_Update then
+    local oldU = LootFrame_Update
+    LootFrame_Update = function(a1, a2, a3, a4)
+      oldU(a1, a2, a3, a4)
+      ProcessLootFrame()
+    end
+  end
+  local g
+  for g = 1, 4 do
+    local gf = getglobal("GroupLootFrame" .. g)
+    if gf and not gf._oceua_loot then
+      gf._oceua_loot = true
+      local oldG = gf:GetScript("OnShow")
+      gf:SetScript("OnShow", function()
+        if oldG then oldG() end
+        ProcessLootFrame()
+      end)
+    end
+  end
+end
+
+-- UIErrorsFrame: skill-up / learn messages (без миготіння — переклад у момент AddMessage)
+local function TranslateErrorMessage(msg)
+  if not msg or msg == "" or HasCyrillic(msg) then return msg end
+  -- Your skill in X has increased to Y.
+  local _, _, skill, rank = string.find(msg, "^Your skill in (.+) has increased to (%d+)%.?$")
+  if skill and rank then
+    local sk = LookupCategoryExact and LookupCategoryExact(string.lower(skill), skill) or nil
+    if not sk and OceUA_Profession_Names then sk = OceUA_Profession_Names[skill] end
+    if not sk and OceUA_Skill_Dictionary then sk = OceUA_Skill_Dictionary[skill] end
+    return "Ваш навик «" .. (sk or skill) .. "» підвищено до " .. rank .. "."
+  end
+  -- You have gained the X skill.
+  _, _, skill = string.find(msg, "^You have gained the (.+) skill%.?$")
+  if skill then
+    local sk = OceUA_Profession_Names and OceUA_Profession_Names[skill] or skill
+    return "Ви здобули навик «" .. sk .. "»."
+  end
+  -- You have learned a new recipe: X  / You have learned how to create: X
+  local _, _, recipe = string.find(msg, "^You have learned .-:%s*(.+)$")
+  if recipe then
+    local ua = LookupItemUA(recipe) or recipe
+    return "Ви вивчили: " .. ua
+  end
+  return msg
+end
+
+local function HookUIErrors()
+  if not UIErrorsFrame or UIErrorsFrame._oceua_hooked then return end
+  UIErrorsFrame._oceua_hooked = true
+  local oldAdd = UIErrorsFrame.AddMessage
+  if oldAdd then
+    UIErrorsFrame.AddMessage = function(self, msg, r, g, b, a)
+      if SkillEnabled() and type(msg) == "string" then
+        msg = TranslateErrorMessage(msg)
+      end
+      return oldAdd(self, msg, r, g, b, a)
+    end
+  end
+end
+
+local lootEvents = CreateFrame("Frame")
+lootEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
+lootEvents:RegisterEvent("LOOT_OPENED")
+lootEvents:RegisterEvent("LOOT_SLOT_CLEARED")
+lootEvents:RegisterEvent("ADDON_LOADED")
+lootEvents:SetScript("OnEvent", function()
+  if event == "PLAYER_ENTERING_WORLD" or event == "ADDON_LOADED" then
+    HookLootFrame()
+    HookUIErrors()
+  elseif event == "LOOT_OPENED" or event == "LOOT_SLOT_CLEARED" then
+    HookLootFrame()
+    ProcessLootFrame()
+  end
+end)
+HookLootFrame()
+HookUIErrors()
 
 -- ============================================================
 -- Команди
