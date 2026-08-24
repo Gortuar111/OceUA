@@ -24,16 +24,50 @@ end
 
 local function LookupName(en)
   if not en or en == "" then return nil end
-  local d
-  -- спочатку Mobs (бойові), потім NPC — один канонічний переклад
-  d = OceUA_Mobs_Dictionary
-  if d and d[en] and d[en] ~= "" then return d[en] end
-  d = OceUA_NPC_Names_Dictionary
-  if d and d[en] and d[en] ~= "" then return d[en] end
-  d = OceUA_Objects_Dictionary
-  if d and d[en] and d[en] ~= "" then return d[en] end
-  d = OceUA_Signs_Dictionary
-  if d and d[en] and d[en] ~= "" then return d[en] end
+  local function hit(d)
+    if not d then return nil end
+    local ua = d[en]
+    if ua and ua ~= "" and ua ~= en then return ua end
+    return nil
+  end
+  local ua
+  -- імена
+  ua = hit(OceUA_Mobs_Dictionary); if ua then return ua end
+  ua = hit(OceUA_NPC_Names_Dictionary); if ua then return ua end
+  ua = hit(OceUA_Objects_Dictionary); if ua then return ua end
+  ua = hit(OceUA_Signs_Dictionary); if ua then return ua end
+  ua = hit(OceUA_Unsorted_Dictionary); if ua then return ua end
+  -- професії / титули тренерів (база professions.lua + Profession_Names)
+  ua = hit(OceUA_profession_ranks); if ua then return ua end
+  ua = hit(OceUA_Profession_Names); if ua then return ua end
+  ua = hit(OceUA_professions); if ua then return ua end
+  ua = hit(OceUA_pet_teach); if ua then return ua end
+  ua = hit(OceUA_tooltip_extras); if ua then return ua end
+  -- фракції / репутація (короткі ярлики теж)
+  ua = hit(OceUA_Reputation_Dictionary); if ua then return ua end
+  -- класи / раси
+  ua = hit(OceUA_Class_Names); if ua then return ua end
+  ua = hit(OceUA_Race_Names); if ua then return ua end
+  -- аури (рідко в unit tip)
+  ua = hit(OceUA_Aura_Descriptions); if ua then return ua end
+  -- зони (короткі назви в тултіпі NPC)
+  local ZONES = {
+    ["Stormwind"] = "Штормовій", ["Stormwind City"] = "Штормовій",
+    ["Ironforge"] = "Залізогарт", ["Darnassus"] = "Дарнас",
+    ["Orgrimmar"] = "Оргрімар", ["Undercity"] = "Підмістя",
+    ["Thunder Bluff"] = "Громовий Бескид", ["Elwynn Forest"] = "Елвіннський ліс",
+    ["Westfall"] = "Західний Край", ["Redridge Mountains"] = "Червоногір'я",
+    ["Duskwood"] = "Смерколісся", ["Loch Modan"] = "Лок Модан",
+    ["Dun Morogh"] = "Дун Морог", ["Teldrassil"] = "Тельдрассил",
+    ["Darkshore"] = "Темнобережжя", ["Ashenvale"] = "Ясенеділ",
+    ["The Barrens"] = "Степи", ["Durotar"] = "Дуротар",
+    ["Mulgore"] = "Мулгор", ["Tirisfal Glades"] = "Тірісфальські нетрі",
+    ["Silverpine Forest"] = "Срібнолісий праліс", ["Hillsbrad Foothills"] = "Передгір'я Гіллзбраду",
+  }
+  if OceUA_Zones_Dictionary and OceUA_Zones_Dictionary[en] and OceUA_Zones_Dictionary[en] ~= "" then
+    return OceUA_Zones_Dictionary[en]
+  end
+  if ZONES[en] then return ZONES[en] end
   return nil
 end
 
@@ -46,6 +80,31 @@ local function FormatName(ua, en)
 end
 
 local FIXED = {
+  ["Paladin Trainer"] = "Учитель паладинів",
+  ["Warrior Trainer"] = "Учитель воїнів",
+  ["Hunter Trainer"] = "Учитель мисливців",
+  ["Rogue Trainer"] = "Учитель розбійників",
+  ["Priest Trainer"] = "Учитель жерців",
+  ["Mage Trainer"] = "Учитель магів",
+  ["Warlock Trainer"] = "Учитель чорнокнижників",
+  ["Druid Trainer"] = "Учитель друїдів",
+  ["Shaman Trainer"] = "Учитель шаманів",
+  ["Weapon Master"] = "Майстер зброї",
+  ["Portal Trainer"] = "Учитель порталів",
+  ["Riding Trainer"] = "Учитель верхової їзди",
+  ["Stable Master"] = "Господар стійл",
+  ["Innkeeper"] = "Шинкар",
+  ["Flight Master"] = "Диспетчер польотів",
+  ["Battlemaster"] = "Воєначальник",
+  ["Banker"] = "Банкір",
+  ["Guild Master"] = "Майстер гільдії",
+  ["Alliance"] = "Альянс",
+  ["Horde"] = "Орда",
+  ["Vendor"] = "Торговець",
+  ["Repair"] = "Ремонт",
+  ["Merchant"] = "Купець",
+  ["Quest Giver"] = "Видає завдання",
+  ["Trainer"] = "Учитель",
   ["Elite"] = "Елітний",
   ["Rare"] = "Рідкісний",
   ["Rare Elite"] = "Рідкісний елітний",
@@ -348,6 +407,11 @@ local function TranslateTipLines(tip)
         -- pet/minion може бути не лише в рядку 1
         local pet = TranslatePetOwnerLine(text)
         local ua = pet or TranslateLevelish(text)
+        if not ua then
+          if not string.find(text, "8") and not string.find(text, "9") then
+            ua = FIXED[text] or LookupName(text)
+          end
+        end
         if ua and ua ~= text then
           fs:SetText(ua)
           changed = true
@@ -394,7 +458,7 @@ local function HookOnShow(tip)
     if oldUp then oldUp() end
     if not this:IsVisible() then return end
     local pass = this._OceUA_PetPass or 0
-    if pass >= 5 then return end
+    if pass >= 12 then return end
     this._OceUA_PetPass = pass + 1
     local isItem = false
     if this.GetItem then

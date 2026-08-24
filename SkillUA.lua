@@ -122,16 +122,23 @@ end
 
 local function TranslateZoneName(en)
   if not en or en == "" then return en end
-  if string.find(en, "8") or string.find(en, "9") then return en end
-  local dict = OceUA_Signs_Dictionary
-  if dict then
-    local ua = dict[en]
-    if ua and ua ~= "" and ua ~= en then return ua end
+  local function lookup(dict, key)
+    if not dict or not key then return nil end
+    local ua = dict[key]
+    if ua and ua ~= "" and ua ~= key then return ua end
+    return nil
   end
+  -- 1) повна база зон (pfQuest)
+  local ua = lookup(OceUA_Zones_Dictionary, en)
+  if ua then return ua end
+  -- 2) вивіски / старі переклади
+  ua = lookup(OceUA_Signs_Dictionary, en)
+  if ua then return ua end
+  -- без The
   local stripped = string.gsub(en, "^[Tt]he%s+", "")
-  if dict and stripped ~= en then
-    local ua = dict[stripped]
-    if ua and ua ~= "" then return ua end
+  if stripped ~= en then
+    ua = lookup(OceUA_Zones_Dictionary, stripped) or lookup(OceUA_Signs_Dictionary, stripped)
+    if ua then return ua end
   end
   return en
 end
@@ -221,7 +228,7 @@ local itemDictUA = {}      -- exact item name → ua (з Items_Dictionary)
 local itemDictCount = 0
 local translateCache = {}  -- clean_text -> { translated, ok }
 local cacheCount = 0
-local CACHE_MAX = 800      -- обмежуємо, щоб не рости нескінченно
+local CACHE_MAX = 4000      -- обмежуємо, щоб не рости нескінченно
 
 -- М'яка нормалізація БЕЗ заміни чисел: для рангів на кшталт "Increased Hit Chance 5"
 -- (після повної Normalize всі ранги зліпаються в один ключ — exact рятує)
@@ -634,6 +641,7 @@ local function BuildDict()
   BuildItemDict()
   -- скіли (основне)
   AddDictTable(OceSkillUA_Dictionary)
+  AddDictTable(OceUA_Aura_Descriptions)
   -- рецепти + репутація
   AddDictTable(OceUA_Recipes_Dictionary)
   AddDictTable(OceUA_Reputation_Dictionary)
@@ -826,11 +834,20 @@ local function CleanupUA(s)
   -- залишки $lword:words; / $g (якщо токенів не вистачило)
   s = string.gsub(s, "%$[lL]([^:]+):([^;]+);", "%1")
   s = string.gsub(s, "%$[gG]([^:]+):([^;]+);", "%1")
-  -- EN одиниці → UA (лише латиниця min/sec/yd, не чіпати вже «хв/сек»)
-  s = string.gsub(s, "(%d+%.?%d*)%s*[Ss][Ee][Cc][Ss]?%.?", "%1 сек")
-  s = string.gsub(s, "(%d+%.?%d*)%s*[Mm][Ii][Nn][Ss]?%.?", "%1 хв")
-  s = string.gsub(s, "(%d+%.?%d*)%s*[Hh][Oo][Uu][Rr][Ss]?%.?", "%1 год")
-  s = string.gsub(s, "(%d+%.?%d*)%s*[Yy][Dd][Ss]?%.?", "%1 м")
+  -- EN одиниці → UA: ЛИШЕ з пробілом перед одиницею (слово sec/min/…)
+  s = string.gsub(s, "(%d+%.?%d*)%s+[Ss][Ee][Cc][Oo][Nn][Dd][Ss]%.?", "%1 сек")
+  s = string.gsub(s, "(%d+%.?%d*)%s+[Ss][Ee][Cc][Ss]%.?", "%1 сек")
+  s = string.gsub(s, "(%d+%.?%d*)%s+[Ss][Ee][Cc]%.?", "%1 сек")
+  s = string.gsub(s, "(%d+%.?%d*)%s+[Mm][Ii][Nn][Uu][Tt][Ee][Ss]%.?", "%1 хв")
+  s = string.gsub(s, "(%d+%.?%d*)%s+[Mm][Ii][Nn][Ss]%.?", "%1 хв")
+  s = string.gsub(s, "(%d+%.?%d*)%s+[Mm][Ii][Nn]%.?", "%1 хв")
+  s = string.gsub(s, "(%d+%.?%d*)%s+[Hh][Oo][Uu][Rr][Ss]%.?", "%1 год")
+  s = string.gsub(s, "(%d+%.?%d*)%s+[Hh][Oo][Uu][Rr]%.?", "%1 год")
+  s = string.gsub(s, "(%d+%.?%d*)%s+[Yy][Aa][Rr][Dd][Ss]%.?", "%1 м")
+  s = string.gsub(s, "(%d+%.?%d*)%s+[Yy][Dd][Ss]%.?", "%1 м")
+  s = string.gsub(s, "(%d+%.?%d*)%s+[Yy][Dd]%.?", "%1 м")
+  -- діапазон шкоди ніколи не «сек»
+  s = string.gsub(s, "(%d+%s*%-%s*%d+%.?%d*)%s+сек", "%1")
   -- анти-дубль: "25 хв хв" / "10 сек сек"
   s = string.gsub(s, "(%d+%.?%d*)%s*хв%s+хв", "%1 хв")
   s = string.gsub(s, "(%d+%.?%d*)%s*сек%s+сек", "%1 сек")
@@ -1076,7 +1093,9 @@ local function TranslateText(text)
   local bestLen = 0
   local bestUa, bestMask = nil, nil
   local normLen = string.len(norm)
+  -- короткий рядок: substring-скан по всьому словнику дуже дорогий (FPS)
   local i
+  if normLen >= 16 then
   for i = 1, table.getn(sortedKeys) do
     local engNorm = sortedKeys[i]
     ua = dictUA[engNorm]
@@ -1099,6 +1118,7 @@ local function TranslateText(text)
       end
     end
   end
+  end -- normLen >= 16
   if bestUa then
     translated = ApplyTokens(bestUa, FilterPlaceholderTokens(tokens, bestMask))
     found = true
@@ -1210,7 +1230,15 @@ end
 TranslateItemLine = function(text)
   if not text or text == "" then return text, false end
   local clean = StripCodes(text)
-  if clean == "" or HasCyrillic(clean) then return text, false end
+  if clean == "" then return text, false end
+  if HasCyrillic(clean) then
+    if string.find(clean, "^[%d%.%s%-]+%s*сек%s*$") then
+      local fixed = string.gsub(clean, "%s*сек%s*$", "")
+      return string.gsub(fixed, "%s+$", ""), true
+    end
+    return text, false
+  end
+  if string.find(clean, "^[%d%s%-%./+:]+$") then return text, false end
 
   -- заголовок ShaguTweaks Equip Compare
   if CURRENTLY_EQUIPPED and clean == CURRENTLY_EQUIPPED then
@@ -1856,10 +1884,32 @@ local function ProcessTooltip(tooltip)
     return
   end
   if tooltip.oceDone then return end
-  -- вже українською — не чіпати (анти-цикл екіп/сумки)
+  -- уже UA на 1-му рядку: для бафів все одно добити інші рядки 1 раз
   if not TooltipNeedsUA(tooltip) then
-    tooltip.oceDone = true
-    return
+    if tooltip.oceNoDual and not tooltip.oceBuffLinesDone then
+      tooltip.oceBuffLinesDone = true
+      -- не return — пройдемо рядки нижче (HasCyrillic пропустить UA)
+    else
+      tooltip.oceDone = true
+      return
+    end
+  end
+  -- юніт-тултіп (NPC/моб): Level N у рядку 2/3 — хай UnitUA, не SkillUA
+  if not tooltip.oceItemTip and not tooltip.oceNoDual then
+    local tn = tooltip:GetName()
+    local l2 = getglobal(tn .. "TextLeft2")
+    local l3 = getglobal(tn .. "TextLeft3")
+    local function isLevelLine(fs)
+      if not fs or not fs.GetText then return false end
+      local x = fs:GetText() or ""
+      if string.sub(x, 1, 6) == "Level " then return true end
+      if string.sub(x, 1, 7) == "Рівень " then return true end
+      return false
+    end
+    if isLevelLine(l2) or isLevelLine(l3) then
+      tooltip.oceDone = true
+      return
+    end
   end
   local now = GetTime and GetTime() or 0
   local gap = tooltip.oceItemTip and 0.03 or 0.12
@@ -1884,7 +1934,7 @@ local function ProcessTooltip(tooltip)
         if ok and newT and newT ~= t then
           hasAnyTranslation = true
           -- перший рядок = назва: UA зверху, сірий EN знизу (зручно для АГ)
-          if i == 1 and SkillShowOriginal() and not tooltip.oceItemTip then
+          if i == 1 and SkillShowOriginal() and not tooltip.oceItemTip and not tooltip.oceNoDual then
             local eng = StripCodes(t)
             -- не дублювати, якщо вже однакове / дуже довгий опис
             if eng and eng ~= "" and string.len(eng) <= 60 and eng ~= StripCodes(newT) then
@@ -1897,12 +1947,25 @@ local function ProcessTooltip(tooltip)
     end
     if right then
       local t = right:GetText()
-      if t and t ~= "" and not HasCyrillic(t) then
-        local newT, ok = TranslateItemLine(t)
-        if not ok then newT, ok = TranslateText(t) end
-        if ok and newT and newT ~= t then
+      if t and t ~= "" then
+        local plain = StripCodes(t)
+        -- значення колонок: числа / діапазони — не перекладати; зняти помилкове «сек»
+        if string.find(plain, "^[%d%.%s%-]+%s*сек%s*$") then
+          local fixed = string.gsub(plain, "%s*сек%s*$", "")
+          fixed = string.gsub(fixed, "%s+$", "")
+          right:SetText(fixed)
           hasAnyTranslation = true
-          right:SetText(newT)
+        elseif HasCyrillic(plain) then
+          -- ok
+        elseif string.find(plain, "^[%d%s%-%./+:]+$") then
+          -- голе число — лишити
+        else
+          local newT, ok = TranslateItemLine(t)
+          if not ok then newT, ok = TranslateText(t) end
+          if ok and newT and newT ~= t then
+            hasAnyTranslation = true
+            right:SetText(newT)
+          end
         end
       end
     end
@@ -3125,9 +3188,30 @@ local function HookTooltipMethods()
   end
 
   -- Buffs / Debuffs
+  local function wrapBuff(oldFunc, extra)
+    return function(self, a1, a2, a3, a4, a5)
+      currentSpellName = nil
+      currentSpellRank = nil
+      currentSpellID = nil
+      if extra then extra(self, a1, a2, a3) end
+      -- сховати на час підміни — без кадру EN→UA
+      local oldA = self.GetAlpha and self:GetAlpha() or 1
+      if self.SetAlpha then self:SetAlpha(0) end
+      oldFunc(self, a1, a2, a3, a4, a5)
+      self.oceNoDual = true
+      self.oceDone = nil
+      self.oceLastProc = nil
+      ProcessTooltip(self)
+      -- другий прохід: клієнт інколи дописує рядки після першого Show
+      ProcessTooltip(self)
+      self.ocePending = nil
+      if self.SetAlpha then self:SetAlpha(oldA > 0 and oldA or 1) end
+    end
+  end
+
   if GameTooltip.SetUnitBuff then
     local old = GameTooltip.SetUnitBuff
-    GameTooltip.SetUnitBuff = wrap(old, function(self, unit, index)
+    GameTooltip.SetUnitBuff = wrapBuff(old, function(self, unit, index)
       local left1 = getglobal("GameTooltipTextLeft1")
       if left1 then currentSpellName = StripCodes(left1:GetText() or "") end
       if unit == "player" and GetPlayerBuffID then
@@ -3138,14 +3222,14 @@ local function HookTooltipMethods()
   end
   if GameTooltip.SetUnitDebuff then
     local old = GameTooltip.SetUnitDebuff
-    GameTooltip.SetUnitDebuff = wrap(old, function(self, unit, index)
+    GameTooltip.SetUnitDebuff = wrapBuff(old, function(self, unit, index)
       local left1 = getglobal("GameTooltipTextLeft1")
       if left1 then currentSpellName = StripCodes(left1:GetText() or "") end
     end)
   end
   if GameTooltip.SetPlayerBuff then
     local old = GameTooltip.SetPlayerBuff
-    GameTooltip.SetPlayerBuff = wrap(old, function(self, index)
+    GameTooltip.SetPlayerBuff = wrapBuff(old, function(self, index)
       local left1 = getglobal("GameTooltipTextLeft1")
       if left1 then currentSpellName = StripCodes(left1:GetText() or "") end
       if GetPlayerBuffID then
@@ -3288,7 +3372,8 @@ local function HookTooltipMethods()
     if oldOnUpdate then oldOnUpdate() end
     if not this:IsVisible() then return end
 
-    if this.oceItemTip then
+    if this.oceItemTip or this.oceNoDual then
+      -- екіп / бафи: лише якщо знову з'явився EN (без циклу)
       if TooltipNeedsUA(this) then
         this.oceDone = nil
         ProcessTooltip(this)
@@ -3325,6 +3410,8 @@ local function HookTooltipMethods()
     this.oceLastSig = nil
     this.oceShiftEquip = nil
     this.oceItemTip = nil
+    this.oceNoDual = nil
+    this.oceBuffLinesDone = nil
     this.oceInvKey = nil
     this.oceLastProc = nil
     if oldOnHide then oldOnHide() end
@@ -3549,9 +3636,11 @@ tipWatcher.elapsed = 0
 tipWatcher:SetScript("OnUpdate", function()
   -- ~10 разів/сек достатньо, менше навантаження ніж кожен кадр
   tipWatcher.elapsed = (tipWatcher.elapsed or 0) + (arg1 or 0.03)
-  if tipWatcher.elapsed < 0.08 then return end
+  if tipWatcher.elapsed < 0.40 then return end
   tipWatcher.elapsed = 0
   if not SkillEnabled() then return end
+  -- у бою рідше чіпати тултіп (FPS)
+  if UnitAffectingCombat and UnitAffectingCombat("player") then return end
   if not GameTooltip or not GameTooltip:IsVisible() then
     if GameTooltip then
       GameTooltip.oceLastSig = nil

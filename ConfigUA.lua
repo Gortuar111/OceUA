@@ -176,7 +176,7 @@ local COL = {
 }
 
 local frame = CreateFrame("Frame", "OceUA_ConfigFrame", UIParent)
-frame:SetWidth(300)
+frame:SetWidth(340)
 frame:SetHeight(370)
 frame:SetPoint("CENTER", 0, 40)
 frame:SetFrameStrata("DIALOG")
@@ -258,15 +258,21 @@ local function MakeTab(text, x)
 end
 
 -- вкладки по центру вікна
-local TAB_W, TAB_GAP = 90, 16
-local tabsTotal = TAB_W * 2 + TAB_GAP
+local TAB_W, TAB_GAP = 88, 10
+local tabsTotal = TAB_W * 3 + TAB_GAP * 2
 local tabLeft = math.floor((frame:GetWidth() - 2 * PAD - tabsTotal) / 2)
 local tabMain = MakeTab("Основне", tabLeft)
-local tabTools = MakeTab("Сервіс", tabLeft + TAB_W + TAB_GAP)
+local tabTracker = MakeTab("Трекер", tabLeft + TAB_W + TAB_GAP)
+local tabTools = MakeTab("Сервіс", tabLeft + (TAB_W + TAB_GAP) * 2)
 
 local panelMain = CreateFrame("Frame", nil, frame)
 panelMain:SetPoint("TOPLEFT", PAD, -78)
 panelMain:SetPoint("BOTTOMRIGHT", -PAD, 72)
+
+local panelTracker = CreateFrame("Frame", nil, frame)
+panelTracker:SetPoint("TOPLEFT", PAD, -78)
+panelTracker:SetPoint("BOTTOMRIGHT", -PAD, 72)
+panelTracker:Hide()
 
 local panelTools = CreateFrame("Frame", nil, frame)
 panelTools:SetPoint("TOPLEFT", PAD, -78)
@@ -274,20 +280,28 @@ panelTools:SetPoint("BOTTOMRIGHT", -PAD, 72)
 panelTools:Hide()
 
 local function ShowTab(which)
+    panelMain:Hide()
+    panelTracker:Hide()
+    panelTools:Hide()
+    tabMain.active = false
+    tabTracker.active = false
+    tabTools.active = false
+    StyleTab(tabMain, false)
+    StyleTab(tabTracker, false)
+    StyleTab(tabTools, false)
     if which == "main" then
         panelMain:Show()
-        panelTools:Hide()
         tabMain.active = true
-        tabTools.active = false
         StyleTab(tabMain, true)
-        StyleTab(tabTools, false)
         frame:SetHeight(370)
+    elseif which == "tracker" then
+        panelTracker:Show()
+        tabTracker.active = true
+        StyleTab(tabTracker, true)
+        frame:SetHeight(360)
     else
-        panelMain:Hide()
         panelTools:Show()
-        tabMain.active = false
         tabTools.active = true
-        StyleTab(tabMain, false)
         StyleTab(tabTools, true)
         frame:SetHeight(400)
     end
@@ -295,6 +309,7 @@ local function ShowTab(which)
 end
 
 tabMain:SetScript("OnClick", function() ShowTab("main") end)
+tabTracker:SetScript("OnClick", function() ShowTab("tracker") end)
 tabTools:SetScript("OnClick", function() ShowTab("tools") end)
 
 -- Кнопка в стилі вкладок: текст + кольорова риска (не «важкий» бокс)
@@ -395,6 +410,114 @@ MakeCheck(panelMain, "book",         "Книги / листи",             3)
 MakeCheck(panelMain, "skill",        "Скіли / предмети",          4)
 MakeCheck(panelMain, "showOriginal", "EN-назва під UA у тултіпі", 5)
 MakeCheck(panelMain, "nameplates",   "Підписи UA над мобами (неймплейти)", 6)
+
+-- ========== Panel: Трекер (вікно квестів під мінімапою) ==========
+local function ApplyTrackerCfg()
+    if OceUA_ApplyQuestTrackerSettings then
+        OceUA_ApplyQuestTrackerSettings()
+    end
+end
+local function ApplyTrackerBorderOnly()
+    if OceUA_ApplyQuestTrackerBorderOnly then
+        OceUA_ApplyQuestTrackerBorderOnly()
+    elseif OceUA_ApplyQuestTrackerSettings then
+        OceUA_ApplyQuestTrackerSettings()
+    end
+end
+
+local function MakeTrackerCheck(key, label, index, tip)
+    local y = -(index * ROW)
+    local cb = CreateFrame("CheckButton", "OceUA_CB_" .. key, panelTracker, "UICheckButtonTemplate")
+    cb:SetWidth(24)
+    cb:SetHeight(24)
+    cb:SetPoint("TOPLEFT", 4, y)
+    local on = true
+    if S[key] == false then on = false end
+    cb:SetChecked(on)
+
+    local t = panelTracker:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    t:SetPoint("LEFT", cb, "RIGHT", 8, 0)
+    t:SetJustifyH("LEFT")
+    t:SetText(label)
+    if on then t:SetTextColor(0.88, 0.95, 0.88) else t:SetTextColor(0.50, 0.50, 0.55) end
+
+    cb:SetScript("OnClick", function()
+        local v = this:GetChecked() and true or false
+        S[key] = v
+        if v then t:SetTextColor(0.88, 0.95, 0.88) else t:SetTextColor(0.50, 0.50, 0.55) end
+        if key == "questTracker" then
+            ApplyTrackerCfg()
+        else
+            ApplyTrackerBorderOnly()
+        end
+        DEFAULT_CHAT_FRAME:AddMessage("|cffb266ffOce|rUA: " .. label .. " = " .. (v and "|cff00ff00ON|r" or "|cffff4040OFF|r"))
+    end)
+    if tip then
+        cb:SetScript("OnEnter", function()
+            GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+            GameTooltip:SetText(tip, nil, nil, nil, nil, 1)
+            GameTooltip:Show()
+        end)
+        cb:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
+    return cb
+end
+
+MakeTrackerCheck("questTracker", "Вікно квестів під мінімапою", 0,
+    "Показати/сховати трекер активних квестів")
+MakeTrackerCheck("questTrackerBorder", "Рамка / затемнене віконце", 1,
+    "Темна підкладка навколо списку квестів")
+MakeTrackerCheck("questTrackerBorderFade", "Приховувати рамку без курсора", 2,
+    "Якщо увімкнено — рамка зникає, коли курсор не над трекером")
+
+-- повзунок непрозорості (OptionsSliderTemplate — видимий на 1.12 / Turtle)
+local a0 = S.questTrackerBorderAlpha or 1.0
+if type(a0) ~= "number" then a0 = 1.0 end
+if a0 < 0.15 then a0 = 0.15 end
+if a0 > 1 then a0 = 1 end
+
+local slider = CreateFrame("Slider", "OceUA_TrackerAlphaSlider", panelTracker, "OptionsSliderTemplate")
+slider:SetPoint("TOPLEFT", 16, -(3 * ROW) - 12)
+slider:SetWidth(260)
+slider:SetMinMaxValues(15, 100)
+slider:SetValueStep(5)
+slider:SetValue(math.floor(a0 * 100 + 0.5))
+
+local slName = slider:GetName()
+local slText = getglobal(slName .. "Text")
+local slLow  = getglobal(slName .. "Low")
+local slHigh = getglobal(slName .. "High")
+if slText then
+    slText:SetText("Непрозорість рамки: " .. tostring(math.floor(a0 * 100 + 0.5)) .. "%")
+    slText:SetTextColor(0.88, 0.82, 0.98)
+end
+if slLow then slLow:SetText("15%") end
+if slHigh then slHigh:SetText("100%") end
+
+slider:SetScript("OnValueChanged", function()
+    local pct = this:GetValue()
+    pct = math.floor(pct / 5 + 0.5) * 5
+    if pct < 15 then pct = 15 end
+    if pct > 100 then pct = 100 end
+    local newA = pct / 100
+    if S.questTrackerBorderAlpha == newA then
+        local t = getglobal(this:GetName() .. "Text")
+        if t then t:SetText("Непрозорість рамки: " .. tostring(pct) .. "%") end
+        return
+    end
+    S.questTrackerBorderAlpha = newA
+    local t = getglobal(this:GetName() .. "Text")
+    if t then t:SetText("Непрозорість рамки: " .. tostring(pct) .. "%") end
+    -- лише альфа рамки, без Refresh трекера
+    ApplyTrackerBorderOnly()
+end)
+
+local alphaHint = panelTracker:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+alphaHint:SetPoint("TOPLEFT", slider, "BOTTOMLEFT", 0, -10)
+alphaHint:SetWidth(280)
+alphaHint:SetJustifyH("LEFT")
+alphaHint:SetTextColor(0.55, 0.55, 0.60)
+alphaHint:SetText("Працює, коли рамка увімкнена. При приховуванні — максимум під час наведення.")
 
 local sepMain = panelMain:CreateTexture(nil, "ARTWORK")
 sepMain:SetTexture("Interface\\Buttons\\WHITE8X8")

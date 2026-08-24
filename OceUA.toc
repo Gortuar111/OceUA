@@ -14,6 +14,7 @@ Data\Book_Translations.lua
 Data\Gossip_Translations.lua
 Data\Quest_Translations.lua
 Data\Skill_Dictionary.lua
+Data\Aura_Descriptions.lua
 Data\Recipes_Dictionary.lua
 Data\Reputation_Dictionary.lua
 Data\Items_Dictionary.lua
@@ -22,6 +23,7 @@ Data\Items_Dictionary.lua
 Data\Names_npc.lua
 Data\Mobs.lua
 Data\Objects.lua
+Data\Zones_Dictionary.lua
 Data\Signs_Zone.lua
 Data\Unsorted.lua
 

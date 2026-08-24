@@ -1977,18 +1977,102 @@ borderFader:SetScript("OnUpdate", function()
     trkBorder:SetAlpha(borderAlpha)
     if borderAlpha == borderTarget then this:Hide() end
 end)
+local function TrkCfg(key, default)
+    local S = OceUA_Settings
+    if not S then return default end
+    local v = S[key]
+    if v == nil then return default end
+    return v
+end
+
+local function BorderMaxAlpha()
+    local a = TrkCfg("questTrackerBorderAlpha", 1)
+    if type(a) ~= "number" then a = 1 end
+    if a < 0.1 then a = 0.1 end
+    if a > 1 then a = 1 end
+    return a
+end
+
 local function BorderFadeTo(a)
-    if a == 0 then
-        -- одразу ховаємо затемнення при знятті курсору
+    -- вимкнена рамка
+    if TrkCfg("questTrackerBorder", true) == false then
         borderTarget = 0
         borderAlpha = 0
         trkBorder:SetAlpha(0)
         borderFader:Hide()
         return
     end
-    borderTarget = a
+    -- без приховування: завжди видима з обраною непрозорістю
+    if TrkCfg("questTrackerBorderFade", true) == false then
+        local mx = BorderMaxAlpha()
+        borderTarget = mx
+        borderAlpha = mx
+        trkBorder:SetAlpha(mx)
+        borderFader:Hide()
+        return
+    end
+    if a == 0 then
+        borderTarget = 0
+        borderAlpha = 0
+        trkBorder:SetAlpha(0)
+        borderFader:Hide()
+        return
+    end
+    borderTarget = BorderMaxAlpha()
     if borderAlpha ~= borderTarget then borderFader:Show() end
 end
+
+-- застосувати налаштування трекера (з конфігу)
+local function TrkShow()
+    if TrkCfg("questTracker", true) == false then
+        trk:Hide()
+        return
+    end
+    trk:Show()
+end
+
+-- light: лише рамка/альфа (без Refresh — без ривків FPS)
+function OceUA_ApplyQuestTrackerBorderOnly()
+    if TrkCfg("questTracker", true) == false then
+        return
+    end
+    if not trk:IsVisible() then return end
+    if TrkCfg("questTrackerBorder", true) == false then
+        borderTarget = 0
+        borderAlpha = 0
+        trkBorder:SetAlpha(0)
+        borderFader:Hide()
+    elseif TrkCfg("questTrackerBorderFade", true) == false then
+        local mx = BorderMaxAlpha()
+        borderTarget = mx
+        borderAlpha = mx
+        trkBorder:SetAlpha(mx)
+        borderFader:Hide()
+    else
+        -- fade-режим: якщо курсор над трекером — показати, інакше сховати
+        if MouseIsOver and MouseIsOver(trk) then
+            BorderFadeTo(1)
+        else
+            BorderFadeTo(0)
+        end
+    end
+end
+
+function OceUA_ApplyQuestTrackerSettings()
+    local show = TrkCfg("questTracker", true) ~= false
+    if not show then
+        trk:Hide()
+        return
+    end
+    -- повний refresh лише коли вмикаємо саме вікно
+    if OceUA_RefreshQuestTracker then
+        OceUA_RefreshQuestTracker()
+    else
+        TrkShow()
+    end
+    OceUA_ApplyQuestTrackerBorderOnly()
+end
+
 trk:SetScript("OnEnter", function() BorderFadeTo(1) end)
 trk:SetScript("OnLeave", function()
     if MouseIsOver and MouseIsOver(trk) then return end
@@ -2230,9 +2314,18 @@ for li = 1, TRK_MAX do
     hit.isTitle = false
     hit:SetScript("OnEnter", function()
         BorderFadeTo(1)
-        if not this.isObj then return end
         local e = this.entry
         if not e then return end
+        -- підсвітка: одна, ледь темна, м'які краї, трохи більша
+        if not this.hoverBg then
+            this.hoverBg = this:CreateTexture(nil, "BACKGROUND")
+            this.hoverBg:SetTexture("Interface\\QuestFrame\\UI-QuestLogTitleHighlight")
+        end
+        this.hoverBg:ClearAllPoints()
+        this.hoverBg:SetPoint("TOPLEFT", this, "TOPLEFT", -3, 3)
+        this.hoverBg:SetPoint("BOTTOMRIGHT", this, "BOTTOMRIGHT", 3, -3)
+        this.hoverBg:SetVertexColor(0.2, 0.18, 0.28, 0.28)
+        this.hoverBg:Show()
         GameTooltip:SetOwner(this, "ANCHOR_LEFT")
         local title = e.tr and e.tr.T and FormatQuestText(e.tr.T) or e.en
         local lv = e.level
@@ -2260,11 +2353,25 @@ for li = 1, TRK_MAX do
         GameTooltip:Show()
     end)
     hit:SetScript("OnLeave", function()
-        GameTooltip:Hide()
+        local e = this.entry
+        local keep = false
+        if e and MouseIsOver then
+            local i
+            for i = 1, TRK_MAX do
+                local h = trk.lines[i]
+                if h and h:IsVisible() and h.entry == e and MouseIsOver(h) then
+                    keep = true
+                    break
+                end
+            end
+        end
+        if not keep then
+            GameTooltip:Hide()
+            if this.hoverBg then this.hoverBg:Hide() end
+        end
         if not (MouseIsOver and MouseIsOver(trk)) then BorderFadeTo(0) end
     end)
     hit:SetScript("OnMouseUp", function()
-        if not this.isObj then return end
         if not this.entry or not this.entry.logIndex then return end
         if arg1 == "RightButton" then
             local logIndex = this.entry.logIndex
@@ -2812,7 +2919,7 @@ function OceUA_RefreshQuestTracker()
         end
 
         -- рівний відступ між квестами
-        if i > 1 then y = y - 6 end
+        if i > 1 then y = y - 8 end
         questNum = questNum + 1
 
         local selectedIdx = trkLastSel or 0
@@ -2826,8 +2933,10 @@ function OceUA_RefreshQuestTracker()
         if hit.readyIcon then hit.readyIcon:Hide() end
         if hit.selBar then hit.selBar:Hide() end
         local numStr = "|cffc9a227" .. tostring(questNum) .. "|r  "
-        local tWrapped, tLines = WrapByWords(title, wrapChars - 4)
-        local titleH = 16 * (tLines or 1)
+        -- врахувати префікс номера при переносі (інакше накладання рядків)
+        local tWrapped, tLines = WrapByWords(title, wrapChars - 8)
+        if not tLines or tLines < 1 then tLines = 1 end
+        local titleH = 16 * tLines
         if titleH < 16 then titleH = 16 end
         hit.fs:ClearAllPoints()
         hit.fs:SetPoint("TOPLEFT", trkBody, "TOPLEFT", isSelected and 8 or 2, y)
@@ -2842,11 +2951,20 @@ function OceUA_RefreshQuestTracker()
             hit.fs:SetText(numStr .. tWrapped)
         end
         hit.fs:Show()
-        hit:EnableMouse(false)
-        hit:Hide()
+        -- реальна висота після SetText (надійніше за оцінку)
+        local realH = hit.fs:GetHeight()
+        if realH and realH > titleH then titleH = realH + 2 end
+        hit:ClearAllPoints()
+        hit:SetPoint("TOPLEFT", trkBody, "TOPLEFT", 2, y)
+        hit:SetHeight(titleH + 1)
+        hit:SetWidth(tw)
+        hit:EnableMouse(true)
+        hit:Show()
         hit.isObj = false
         hit.isTitle = true
-        hit.entry = nil
+        hit.entry = e
+        hit.blockStartY = y
+        e._titleHit = hit
 
         -- смужка підсвітки зліва для вибраного
         if not hit.selBar then
@@ -3001,6 +3119,31 @@ function OceUA_RefreshQuestTracker()
             oh.isTitle = false
             y = y - h - 2
         end
+
+        -- один суцільний hit на весь блок квесту (назва + описи)
+        if e._titleHit then
+            local th = e._titleHit
+            local startY = th.blockStartY or 0
+            local blockH = (startY - y)
+            if blockH < 16 then blockH = 16 end
+            th:ClearAllPoints()
+            th:SetPoint("TOPLEFT", trkBody, "TOPLEFT", 0, startY + 2)
+            th:SetHeight(blockH + 4)
+            th:SetWidth(tw + 2)
+            th:EnableMouse(true)
+            th:Show()
+            th.entry = e
+            -- об'єктивні hit не перехоплюють мишу — без ривків між рядками
+            local k
+            for k = 1, TRK_MAX do
+                local h2 = lines[k]
+                if h2 and h2.entry == e and h2 ~= th then
+                    h2:EnableMouse(false)
+                    h2:Hide()
+                end
+            end
+            e._titleHit = nil
+        end
     end
 
     local j
@@ -3013,6 +3156,7 @@ function OceUA_RefreshQuestTracker()
         if lines[j].selBar then lines[j].selBar:Hide() end
         if lines[j].readyIcon then lines[j].readyIcon:Hide() end
         if lines[j].divBg then lines[j].divBg:Hide() end
+        if lines[j].hoverBg then lines[j].hoverBg:Hide() end
     end
 
     -- TranslatePfQuestFrames винесено з трекера (тяжкий обхід дерев фреймів)
@@ -3053,7 +3197,7 @@ function OceUA_RefreshQuestTracker()
         trkScroll = 0
     end
     ApplyScroll()
-    trk:Show()
+    TrkShow()
     U.busy = false
 end
 
@@ -3784,3 +3928,11 @@ oceTipInit:SetScript("OnEvent", function()
     OceTip_HookAll()
 end)
 OceTip_HookAll()
+
+
+-- застосувати налаштування трекера після логіну
+local oceTrkCfgBoot = CreateFrame("Frame")
+oceTrkCfgBoot:RegisterEvent("PLAYER_ENTERING_WORLD")
+oceTrkCfgBoot:SetScript("OnEvent", function()
+    if OceUA_ApplyQuestTrackerSettings then OceUA_ApplyQuestTrackerSettings() end
+end)
