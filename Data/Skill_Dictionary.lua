@@ -10535,6 +10535,7 @@ OceSkillUA_Dictionary = {
   ["Stamina and increases their health by $s1%."] = "Витривалість та збільшує їхній запас здоров'я на $s1%.",
   ["Stealthed.\nMovement speed slowed by $s2%."] = "У режимі невидимості.\nШвидкість руху знижена на $s2%.",
   ["Stormstrike Lightning Strike Cooldown Bonus"] = "Бонус до часу відновлення вміння «Удар грози» та «Удар блискавки»",
+  ["Given to those who survived an OctoWoW DDoS"] = "Вручається тим, хто пережив DDoS-атаку на OctoWoW",
   ["Strikes at an enemy, inflicting $s1 damage."] = "Наносить удар по супротивнику, завдаючи $s1 одиниць шкоди.",
   ["Stunned.  Any damage will break the effect."] = "Оглушення. Будь-яке пошкодження припиняє дію ефекту.",
   ["Summons a Timberling to protect you for $d."] = "Викликає Тімберлінга, який захищатиме вас протягом $d .",

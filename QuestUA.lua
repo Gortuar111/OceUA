@@ -3561,30 +3561,62 @@ local function OceTip_TranslateObj(en)
     return en
 end
 
+local function OceTip_LooksLikeName(en)
+    -- коротке ім'я NPC/моба/точки — НЕ замінювати на O/D квесту
+    if not en then return true end
+    local s = OceTip_Strip(en)
+    if s == "" then return true end
+    -- явне речення / інструкція квесту
+    if string.find(s, "[%.%?!]") then return false end
+    if string.find(string.lower(s), "^%s*bring ") then return false end
+    if string.find(string.lower(s), "^%s*kill ") then return false end
+    if string.find(string.lower(s), "^%s*collect ") then return false end
+    if string.find(string.lower(s), "^%s*speak ") then return false end
+    if string.find(string.lower(s), "^%s*talk ") then return false end
+    if string.find(string.lower(s), "^%s*deliver ") then return false end
+    if string.find(string.lower(s), "^%s*slay ") then return false end
+    if string.find(string.lower(s), "^%s*find ") then return false end
+    if string.find(string.lower(s), "^%s*travel ") then return false end
+    if string.find(string.lower(s), "^%s*go ") then return false end
+    if string.find(string.lower(s), "^%s*return ") then return false end
+    if string.find(string.lower(s), "^%s*use ") then return false end
+    if string.find(string.lower(s), "^%s*retrieve ") then return false end
+    if string.find(string.lower(s), "^%s*gather ") then return false end
+    if string.find(string.lower(s), "^%s*obtain ") then return false end
+    if string.find(string.lower(s), "^%s*escort ") then return false end
+    if string.find(string.lower(s), "^%s*protect ") then return false end
+    if string.find(string.lower(s), "^%s*defeat ") then return false end
+    if string.len(s) > 55 then return false end  -- довгий текст = опис
+    local words = 0
+    for _ in string.gfind(s, "%S+") do words = words + 1 end
+    if words <= 6 and string.len(s) <= 40 then return true end
+    return false
+end
+
 local function OceTip_TranslateQuestBody(en)
-    -- опис / objectives text (O / D) з бази OceUA
+    -- O/D з бази вже UA — підставляємо їх замість EN-опису pfQuest.
+    -- Імена NPC/мобів (короткі, без речень) НЕ чіпаємо.
     if not en or en == "" then return en end
     if HasCyrQ and HasCyrQ(en) then return en end
+    if OceTip_LooksLikeName(en) then
+        -- можливо це objective-рядок типу "Crystal Kelp Frond" — спробувати obj
+        return OceTip_TranslateObj(en)
+    end
     local tr = nil
     if oceTipLastQuestEN and FindTranslation then
         tr = FindTranslation(oceTipLastQuestEN)
     end
     if tr then
-        if tr.O and tr.O ~= "" then
+        -- довгий/реченнєвий рядок після [!] → це objectives або details
+        if tr.O and tr.O ~= "" and string.len(en) > 18 then
             local o = FormatQuestText and FormatQuestText(tr.O) or tr.O
-            -- якщо англ. рядок схожий на objectives — підставляємо O
-            local enLow = string.lower(OceTip_Strip(en))
-            local oLow = string.lower(OceTip_Strip(o))
-            if string.len(en) > 15 then
-                return o
-            end
+            return o
         end
         if tr.D and tr.D ~= "" and string.len(en) > 40 then
             local d = FormatQuestText and FormatQuestText(tr.D) or tr.D
             return d
         end
     end
-    -- fallback: спроба як objective line
     return OceTip_TranslateObj(en)
 end
 
@@ -3814,7 +3846,7 @@ local function OceTip_ConvertLine(text)
     if OceTip_IsObjCounter(plain) then
         return OceTip_StyleCounter(text)
     end
-    -- опис квесту на NPC: лише якщо вже був [!] у цьому тултіпі
+    -- опис квесту: лише якщо вже був [!] і StyleBody підтвердить збіг з O/D
     if oceTipLastQuestEN and not (HasCyrQ and HasCyrQ(plain)) and string.len(plain) > 18 then
         if not OceTip_IsLevelLine(plain) then
             return OceTip_StyleBody(text)
