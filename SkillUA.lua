@@ -1826,6 +1826,14 @@ local function ProcessShoppingTooltip(tooltip)
           if ua then newT, ok = ua, true end
         end
         if ok and newT and newT ~= t then
+          if i == 1 and SkillShowOriginal() then
+            local eng = StripCodes(t)
+            if eng and eng ~= "" and string.len(eng) <= 80 and eng ~= StripCodes(newT) then
+              if not string.find(newT, eng, 1, true) then
+                newT = newT .. "\n|cff999999" .. eng .. "|r"
+              end
+            end
+          end
           left:SetText(newT)
           changed = true
         end
@@ -1933,12 +1941,15 @@ local function ProcessTooltip(tooltip)
         if not ok then newT, ok = TranslateText(t) end
         if ok and newT and newT ~= t then
           hasAnyTranslation = true
-          -- перший рядок = назва: UA зверху, сірий EN знизу (зручно для АГ)
-          if i == 1 and SkillShowOriginal() and not tooltip.oceItemTip and not tooltip.oceNoDual then
+          -- перший рядок = назва: UA зверху, сірий EN знизу (скіли, предмети, шмот, усе)
+          -- oceNoDual лишається для бафів (там dual не потрібен)
+          if i == 1 and SkillShowOriginal() and not tooltip.oceNoDual then
             local eng = StripCodes(t)
-            -- не дублювати, якщо вже однакове / дуже довгий опис
-            if eng and eng ~= "" and string.len(eng) <= 60 and eng ~= StripCodes(newT) then
-              newT = newT .. "\n|cff999999" .. eng .. "|r"
+            local maxLen = tooltip.oceItemTip and 80 or 60
+            if eng and eng ~= "" and string.len(eng) <= maxLen and eng ~= StripCodes(newT) then
+              if not string.find(newT, eng, 1, true) then
+                newT = newT .. "\n|cff999999" .. eng .. "|r"
+              end
             end
           end
           left:SetText(newT)

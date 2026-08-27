@@ -119,6 +119,14 @@ OceUA_tooltip_extras = {
 
   -- ui — Cooldown remaining…
   ["Cooldown remaining: $s1"] = "Час відновлення: $s1",
+  
+  -- other
+  ["A little something from Speedy to keep you steady on your journey."] = "Невеличкий подарунок від Спіді, щоб ви почувалися впевнено у своїй подорожі.",
+  [""] = "",
+  [""] = "",
+  [""] = "",
+  [""] = "",
+  [""] = "",
 
   -- flavor — жартівливі/особливі описи
   ["Old, grumpy, and possibly retired twice. Goes forward when bribed. Sometimes sideways."] = "Старий, буркотливий і, можливо, двічі вийшов на пенсію. Рухається вперед, якщо йому дати хабар. Іноді — вбік.",

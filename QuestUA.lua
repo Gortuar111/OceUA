@@ -90,8 +90,44 @@ local function NormalizeQuestId(id)
     return nil
 end
 
+-- ID з рядка журналу (різні клієнти / SuperWoW / лінк)
+local function QuestIdFromLogIndex(index)
+    if not index or index < 1 or not GetQuestLogTitle then return nil end
+    local a1, a2, a3, a4, a5, a6, a7, a8, a9, a10 = GetQuestLogTitle(index)
+    -- a4 = isHeader
+    if a4 == 1 or a4 == true then return nil end
+    local candidates = { a8, a9, a10, a7 }
+    local ci
+    for ci = 1, table.getn(candidates) do
+        local id = NormalizeQuestId(candidates[ci])
+        if id and id >= 10 then return id end
+    end
+    if type(GetQuestLink) == "function" then
+        local link = GetQuestLink(index)
+        if link then
+            local _, _, sid = string.find(link, "quest:(%d+)")
+            local id = NormalizeQuestId(sid)
+            if id then return id end
+        end
+    end
+    if type(GetQuestLogQuestID) == "function" then
+        local ok, id = pcall(GetQuestLogQuestID, index)
+        if ok then
+            id = NormalizeQuestId(id)
+            if id then return id end
+        end
+    end
+    if type(GetQuestLogId) == "function" then
+        local ok, id = pcall(GetQuestLogId, index)
+        if ok then
+            id = NormalizeQuestId(id)
+            if id then return id end
+        end
+    end
+    return nil
+end
+
 local function GetCurrentQuestID()
-    -- 1) SuperWoW / Oce API
     if type(GetQuestID) == "function" then
         local ok, id = pcall(GetQuestID)
         if ok then
@@ -99,8 +135,14 @@ local function GetCurrentQuestID()
             if id then return id end
         end
     end
+    if type(GetQuestId) == "function" then
+        local ok, id = pcall(GetQuestId)
+        if ok then
+            id = NormalizeQuestId(id)
+            if id then return id end
+        end
+    end
 
-    -- 2) Поля на QuestFrame (інші аддони / клієнт)
     if QuestFrame then
         local id = NormalizeQuestId(
             QuestFrame.questID or QuestFrame.questId or QuestFrame.QID
@@ -109,77 +151,55 @@ local function GetCurrentQuestID()
         if id then return id end
     end
 
-    -- 3) Вибраний рядок у журналі квестів
-    if GetQuestLogSelection and GetQuestLogTitle then
+    if QuestFrame and QuestFrame.IsShown and QuestFrame:IsShown() then
+        if pfQuest and pfQuest.questid then
+            local id = NormalizeQuestId(pfQuest.questid)
+            if id then return id end
+        end
+    end
+
+    if GetQuestLogSelection then
         local sel = GetQuestLogSelection()
         if sel and sel > 0 then
-            local qt, level, tag, isHeader, isCollapsed, isComplete, freq, qid = GetQuestLogTitle(sel)
-            if not isHeader then
-                qid = NormalizeQuestId(qid)
-                if qid then return qid end
-                if type(GetQuestLink) == "function" then
-                    local link = GetQuestLink(sel)
-                    if link then
-                        local _, _, sid = string.find(link, "quest:(%d+)")
-                        qid = NormalizeQuestId(sid)
-                        if qid then return qid end
-                    end
-                end
-            end
+            local id = QuestIdFromLogIndex(sel)
+            if id then return id end
         end
     end
 
     return nil
 end
 
--- ID з журналу: спочатку вибраний рядок, інакше єдиний збіг за назвою
 local function GetQuestIDFromLog(title)
-    if not title or not GetNumQuestLogEntries or not GetQuestLogTitle then return nil end
-    local want = NormalizeTitle(title)
-    if want == "" then return nil end
+    if not GetNumQuestLogEntries or not GetQuestLogTitle then return nil end
 
-    -- вибраний у журналі з тією ж назвою — найнадійніше
     if GetQuestLogSelection then
         local sel = GetQuestLogSelection()
         if sel and sel > 0 then
-            local qt, level, tag, isHeader, isCollapsed, isComplete, freq, qid = GetQuestLogTitle(sel)
-            if not isHeader and qt and NormalizeTitle(qt) == want then
-                qid = NormalizeQuestId(qid)
-                if qid then return qid end
-                if type(GetQuestLink) == "function" then
-                    local link = GetQuestLink(sel)
-                    if link then
-                        local _, _, sid = string.find(link, "quest:(%d+)")
-                        qid = NormalizeQuestId(sid)
-                        if qid then return qid end
-                    end
+            local id = QuestIdFromLogIndex(sel)
+            if id then
+                if not title or title == "" then return id end
+                if QuestLogFrame and QuestLogFrame.IsVisible and QuestLogFrame:IsVisible() then
+                    return id
                 end
+                local qt = GetQuestLogTitle(sel)
+                if qt and NormalizeTitle(qt) == NormalizeTitle(title) then return id end
             end
         end
     end
 
+    if not title or title == "" then return nil end
+    local want = NormalizeTitle(title)
     local matches = {}
-    local n = GetNumQuestLogEntries()
+    local n = GetNumQuestLogEntries() or 0
     local i
     for i = 1, n do
-        local qt, level, tag, isHeader, isCollapsed, isComplete, freq, qid = GetQuestLogTitle(i)
-        if not isHeader and qt and NormalizeTitle(qt) == want then
-            qid = NormalizeQuestId(qid)
-            if not qid and type(GetQuestLink) == "function" then
-                local link = GetQuestLink(i)
-                if link then
-                    local _, _, sid = string.find(link, "quest:(%d+)")
-                    qid = NormalizeQuestId(sid)
-                end
-            end
-            if qid then
-                matches[table.getn(matches) + 1] = qid
-            end
+        local t, level, tag, isHeader = GetQuestLogTitle(i)
+        if not isHeader and t and NormalizeTitle(t) == want then
+            local id = QuestIdFromLogIndex(i)
+            if id then matches[table.getn(matches) + 1] = id end
         end
     end
-    if table.getn(matches) == 1 then
-        return matches[1]
-    end
+    if table.getn(matches) == 1 then return matches[1] end
     return nil
 end
 
@@ -189,16 +209,9 @@ local function QuestIdsInLog()
     if not GetNumQuestLogEntries or not GetQuestLogTitle then return set end
     local i
     for i = 1, GetNumQuestLogEntries() do
-        local qt, level, tag, isHeader, isCollapsed, isComplete, freq, qid = GetQuestLogTitle(i)
+        local t, level, tag, isHeader = GetQuestLogTitle(i)
         if not isHeader then
-            qid = NormalizeQuestId(qid)
-            if not qid and type(GetQuestLink) == "function" then
-                local link = GetQuestLink(i)
-                if link then
-                    local _, _, sid = string.find(link, "quest:(%d+)")
-                    qid = NormalizeQuestId(sid)
-                end
-            end
+            local qid = QuestIdFromLogIndex(i)
             if qid then set[qid] = true end
         end
     end
@@ -279,39 +292,197 @@ local function NormCmp(s)
     return s
 end
 
--- збіг англ. тексту з клієнта (GetQuestText/GetObjectiveText) і знімка pfQuest
+-- EN з pfQuest (безпечно, без падінь)
+local function GetQuestEnSnapshot(id)
+    id = NormalizeQuestId(id)
+    if not id then return nil end
+    if OceUA_PfQuest_EN and OceUA_PfQuest_EN[id] then
+        return OceUA_PfQuest_EN[id]
+    end
+    if not pfDB then return nil end
+    local ok, q = pcall(function()
+        if pfDB["quests"] and pfDB["quests"]["enUS"] then
+            return pfDB["quests"]["enUS"][id] or pfDB["quests"]["enUS"][tostring(id)]
+        end
+        if pfDB.quests and pfDB.quests.enUS then
+            return pfDB.quests.enUS[id] or pfDB.quests.enUS[tostring(id)]
+        end
+        return nil
+    end)
+    if not ok or type(q) ~= "table" then return nil end
+    return {
+        D = q["D"] or q.D or "",
+        O = q["O"] or q.O or "",
+        T = q["T"] or q.T or "",
+    }
+end
+
+local function StripTokens(s)
+    if not s then return "" end
+    s = string.gsub(s, "%$[BbNnCcRr]", " ")
+    s = string.gsub(s, "%$g%([^%)]*%)", " ")
+    s = string.gsub(s, "%s+", " ")
+    return NormCmp(s)
+end
+
+local function ClientQuestTexts()
+    local qt = (GetQuestText and GetQuestText()) or ""
+    local ot = (GetObjectiveText and GetObjectiveText()) or ""
+    local pt = (GetProgressText and GetProgressText()) or ""
+    return StripTokens(qt), StripTokens(ot), StripTokens(pt)
+end
+
+-- суворий збіг: лише майже повний текст, без "вгадувань"
+local function ScoreTextPair(client, db)
+    if not client or client == "" or not db or db == "" then return 0 end
+    if client == db then return 300 end
+    -- префікс ≥ 50 символів має збігатися
+    local need = 50
+    if string.len(client) < need or string.len(db) < need then
+        -- короткі objectives: повний збіг або входження цілого короткого рядка
+        if string.len(client) >= 20 and string.len(client) <= 80 then
+            if string.find(db, client, 1, true) or string.find(client, db, 1, true) then
+                return 200
+            end
+        end
+        return 0
+    end
+    local c50 = string.sub(client, 1, need)
+    local d50 = string.sub(db, 1, need)
+    if c50 == d50 then return 250 end
+    if string.find(db, c50, 1, true) or string.find(client, d50, 1, true) then
+        return 180
+    end
+    return 0
+end
+
 local function ScoreByEnglishBody(id)
-    local en = OceUA_PfQuest_EN and OceUA_PfQuest_EN[id]
+    local en = GetQuestEnSnapshot(id)
     if not en then return 0 end
+    local qt, ot, pt = ClientQuestTexts()
+    -- немає тексту вікна квесту — не оцінюємо (інакше хибні збіги)
+    if qt == "" and ot == "" and pt == "" then return 0 end
     local score = 0
-    local qt = GetQuestText and GetQuestText() or ""
-    local ot = GetObjectiveText and GetObjectiveText() or ""
-    local pt = GetProgressText and GetProgressText() or ""
-    qt, ot, pt = NormCmp(qt), NormCmp(ot), NormCmp(pt)
-    local ed = NormCmp(en.D)
-    local eo = NormCmp(en.O)
-    if ed ~= "" and qt ~= "" then
-        if ed == qt then
-            score = score + 200
-        elseif string.len(qt) > 30 and string.find(ed, string.sub(qt, 1, 40), 1, true) then
-            score = score + 80
-        elseif string.len(ed) > 30 and string.find(qt, string.sub(ed, 1, 40), 1, true) then
-            score = score + 80
+    local ed = StripTokens(en.D)
+    local eo = StripTokens(en.O)
+    score = score + ScoreTextPair(qt, ed)
+    score = score + ScoreTextPair(ot, eo)
+    score = score + ScoreTextPair(qt, eo)
+    if pt ~= "" then
+        score = score + math.floor(ScoreTextPair(pt, ed) / 3)
+    end
+    return score
+end
+
+-- Розвести одноіменні квести: EN з вікна клієнта ↔ маркери в UA-тексті бази
+-- (string.lower у 1.12 НЕ працює з кирилицею — не чіпаємо UA case)
+local function ScoreByClientHints(id, row)
+    local parts = {}
+    local function add(s)
+        if s and s ~= "" then parts[table.getn(parts) + 1] = s end
+    end
+    add(GetQuestText and GetQuestText() or nil)
+    add(GetObjectiveText and GetObjectiveText() or nil)
+    add(GetProgressText and GetProgressText() or nil)
+    if GetRewardText then add(GetRewardText()) end
+    if GetQuestLogQuestText then
+        local ok, d, o = pcall(GetQuestLogQuestText)
+        if ok then add(d) add(o) end
+    end
+    if GetNumQuestLeaderBoards and GetQuestLogLeaderBoard then
+        local n = GetNumQuestLeaderBoards() or 0
+        local i
+        for i = 1, n do
+            local ok, t = pcall(GetQuestLogLeaderBoard, i)
+            if ok then add(t) end
         end
     end
-    if eo ~= "" and ot ~= "" then
-        if eo == ot then
-            score = score + 200
-        elseif string.len(ot) > 20 and string.find(eo, string.sub(ot, 1, 30), 1, true) then
-            score = score + 80
-        elseif string.len(eo) > 20 and string.find(ot, string.sub(eo, 1, 30), 1, true) then
-            score = score + 80
+
+    local client = ""
+    local pi
+    for pi = 1, table.getn(parts) do
+        client = client .. "\n" .. string.lower(parts[pi])
+    end
+    if string.gsub(client, "%s+", "") == "" then return 0 end
+
+    local score = 0
+
+    -- A) Перекриття слів з EN-objectives у pfDB (найточніше для ланцюжків)
+    local en = GetQuestEnSnapshot and GetQuestEnSnapshot(id) or nil
+    if en then
+        local eo = string.lower(tostring(en.O or "") .. " " .. tostring(en.D or ""))
+        if eo ~= "" then
+            -- слова ≥5 літер з клієнта, що є в EN-базі цього ID
+            local pos = 1
+            while pos <= string.len(client) do
+                local s, e, word = string.find(client, "([%a'][%a'][%a'][%a'][%a']+)", pos)
+                if not s then break end
+                pos = e + 1
+                if not string.find(" the and for with from that this your then into onto return use ", " " .. word .. " ", 1, true) then
+                    if string.find(eo, word, 1, true) then
+                        score = score + 30
+                    end
+                end
+            end
         end
     end
-    -- progress text інколи збігається з D/O
-    if pt ~= "" and ed ~= "" and (pt == ed or string.find(ed, string.sub(pt, 1, math.min(30, string.len(pt))), 1, true)) then
-        score = score + 40
+
+    -- B) UA-маркери (коли pfDB немає кастомів)
+    local blob = ""
+    if row then
+        blob = tostring(row.O or "") .. "\n" .. tostring(row.D or "") .. "\n"
+            .. tostring(row.P or "") .. "\n" .. tostring(row.C or "")
     end
+    local function clientHas(s)
+        return s and string.find(client, s, 1, true) ~= nil
+    end
+    local function blobHas(s)
+        return s and string.find(blob, s, 1, true) ~= nil
+    end
+    local function hit(enSub, markers, pts)
+        if not clientHas(enSub) then return end
+        local mi
+        for mi = 1, table.getn(markers) do
+            if blobHas(markers[mi]) then
+                score = score + pts
+                return
+            end
+        end
+    end
+
+    -- унікальні цілі ланцюжка (важливіше за локацію)
+    hit("stonefield", { "Стоунфілд", "Stonefield", "Кам", "ікло", "Ікло" }, 200)
+    hit("tusk", { "ікло", "Ікло", "Tusk" }, 180)
+    hit("prowler", { "Бродяг", "бродяг", "Prowler" }, 220)
+    hit("forest bear", { "лісового ведмедя", "лісовий ведмідь", "forest bear" }, 220)
+    hit("young forest", { "молодого лісового", "young forest" }, 220)
+    hit("bear", { "ведмед", "Bear", "bear" }, 80)
+
+    hit("crimson", { "багрян", "кривав", "Crimson", "червон" }, 200)
+    hit("lynx", { "рись", "Рись", "Lynx" }, 200)
+    hit("hawkstrider", { "яструб", "Hawkstrider", "слонов" }, 200)
+    hit("sunsorrow", { "Сансорроу", "Sunsorrow", "Санссорроу" }, 180)
+    hit("damilari", { "Дамілар", "Damilari" }, 180)
+
+    -- локація (слабше за ціль)
+    hit("goldshire", { "Голдшир", "Goldshire" }, 60)
+    hit("daisy", { "Дейзі", "Daisy" }, 60)
+    hit("windhelm", { "Віндхельм", "Windhelm" }, 40)
+    hit("alah", { "Алах", "Alah" }, 60)
+    hit("thalas", { "Талас", "Thalas" }, 40)
+
+    hit("elwynn", { "Елвін", "Elwynn" }, 30)
+    hit("orgrimmar", { "Оргриммар", "Orgrimmar" }, 50)
+    hit("razor hill", { "Razor", "рейзор" }, 50)
+    hit("dolanaar", { "Dolanaar", "Доланаар" }, 50)
+    hit("brill", { "Brill", "Брілл" }, 50)
+    hit("bloodhoof", { "Bloodhoof", "Бладхуф" }, 50)
+    hit("sen'jin", { "Sen'jin", "Сен'джин" }, 50)
+    hit("ironforge", { "Ironforge", "Айронфордж" }, 50)
+    hit("darnassus", { "Darnassus", "Дарнас" }, 50)
+    hit("undercity", { "Undercity", "Підміст" }, 50)
+    hit("thunder bluff", { "Thunder Bluff", "Громов" }, 50)
+
     return score
 end
 
@@ -360,32 +531,127 @@ local function PickFromList(list, preferredId)
         end
     end
 
-    -- головне для однакових назв: збіг англ. опису/цілей із клієнта
+    -- однакові назви: текст клієнта (EN) ↔ підказки в UA + pfDB
     local best, bestScore = nil, 0
+    local secondScore = 0
+    local i
     for i = 1, table.getn(list) do
         local id = NormalizeQuestId(list[i].id)
         if id then
-            local sc = ScoreByEnglishBody(id)
+            local sc = 0
+            if ScoreByClientHints then
+                sc = ScoreByClientHints(id, list[i])
+            elseif ScoreByEnglishBody then
+                sc = ScoreByEnglishBody(id)
+            end
             if sc > bestScore then
+                secondScore = bestScore
                 bestScore = sc
                 best = list[i]
+            elseif sc > secondScore then
+                secondScore = sc
             end
         end
     end
-    if best and bestScore > 0 then
-        Debug("PickFromList: EN-body match id=" .. tostring(best.id) .. " score=" .. tostring(bestScore))
+    -- потрібен явний відрив, щоб не вгадати сусіда
+    if best and bestScore >= 80 and (bestScore > secondScore or secondScore == 0) then
+        Debug("PickFromList: hints id=" .. tostring(best.id) .. " score=" .. tostring(bestScore) .. " 2nd=" .. tostring(secondScore))
         return best
     end
 
-    Debug("PickFromList: ambiguous, fallback first of " .. tostring(table.getn(list)))
+    Debug("PickFromList: ambiguous, fallback first of " .. tostring(table.getn(list))
+        .. " best=" .. tostring(best and best.id) .. " sc=" .. tostring(bestScore))
     return list[1]
 end
 
+-- Якщо API не дає ID: визначити ID через pfDB (EN-текст вікна ↔ pfQuest). Лише id.
+local function ResolveQuestIdViaPfDB(titleHint)
+    if not pfDB then return nil end
+    local qt = (GetQuestText and GetQuestText()) or ""
+    local ot = (GetObjectiveText and GetObjectiveText()) or ""
+    qt = NormCmp(qt)
+    ot = NormCmp(ot)
+    if qt == "" and ot == "" then return nil end
+
+    local ok, enUS = pcall(function()
+        if pfDB["quests"] and pfDB["quests"]["enUS"] then return pfDB["quests"]["enUS"] end
+        if pfDB.quests and pfDB.quests.enUS then return pfDB.quests.enUS end
+        return nil
+    end)
+    if not ok or type(enUS) ~= "table" then return nil end
+
+    -- лише кандидати з тією ж назвою (не весь pfDB)
+    local candidates = nil
+    if titleHint and titleHint ~= "" then
+        local t = NormalizeTitle(titleHint)
+        candidates = byTitleList[t] or byTitleLowerList[string.lower(t)]
+    end
+    if not candidates and GetTitleText then
+        local tt = GetTitleText()
+        if tt and tt ~= "" then
+            local t = NormalizeTitle(tt)
+            candidates = byTitleList[t] or byTitleLowerList[string.lower(t)]
+        end
+    end
+
+    local bestId, bestScore = nil, 0
+    local function scoreRow(nid, row)
+        if type(row) ~= "table" then return end
+        local ed = NormCmp(row["D"] or row.D or "")
+        local eo = NormCmp(row["O"] or row.O or "")
+        local sc = 0
+        if qt ~= "" and ed ~= "" then
+            if qt == ed then sc = sc + 300
+            elseif string.len(qt) >= 50 and string.sub(qt, 1, 50) == string.sub(ed, 1, 50) then sc = sc + 200
+            end
+        end
+        if ot ~= "" and eo ~= "" then
+            if ot == eo then sc = sc + 300
+            elseif string.len(ot) >= 30 and string.sub(ot, 1, 30) == string.sub(eo, 1, 30) then sc = sc + 200
+            end
+        end
+        if sc > bestScore then bestScore = sc; bestId = nid end
+    end
+
+    if candidates then
+        local i
+        for i = 1, table.getn(candidates) do
+            local nid = NormalizeQuestId(candidates[i].id)
+            if nid then
+                local row = enUS[nid] or enUS[tostring(nid)]
+                if row then scoreRow(nid, row) end
+            end
+        end
+    else
+        -- fallback: не сканувати весь pfDB (лаг) — виходимо
+        return nil
+    end
+    if bestId and bestScore >= 200 then
+        Debug("ResolveQuestIdViaPfDB id=" .. tostring(bestId) .. " score=" .. tostring(bestScore))
+        return bestId
+    end
+    return nil
+end
+
 local function FindTranslation(englishTitle)
-    -- 1) Пріоритет: реальний ID з вікна квесту / логу
+    -- 1) ID (найнадійніше для одноіменних квестів)
     local qid = GetCurrentQuestID()
     if not qid then
         qid = GetQuestIDFromLog(englishTitle)
+    end
+    if not qid then
+        -- дорогий скан pfDB лише коли є текст вікна/журналу (не для кожного рядка списку)
+        local hasBody = false
+        local qt = GetQuestText and GetQuestText() or ""
+        local ot = GetObjectiveText and GetObjectiveText() or ""
+        if qt ~= "" or ot ~= "" then hasBody = true end
+        if not hasBody and GetQuestLogQuestText then
+            local ok, d, o = pcall(GetQuestLogQuestText)
+            if ok and ((d and d ~= "") or (o and o ~= "")) then hasBody = true end
+        end
+        if hasBody and ResolveQuestIdViaPfDB then
+            qid = ResolveQuestIdViaPfDB(englishTitle)
+        end
     end
     if qid then
         local row = DB[qid] or DB[tostring(qid)]
@@ -397,12 +663,16 @@ local function FindTranslation(englishTitle)
         Debug("id=" .. tostring(qid) .. " not in DB, fallback title")
     end
 
-    if not englishTitle or englishTitle == "" then return nil end
+    -- 2) Fallback за назвою (коли клієнт не віддає ID)
+    if not englishTitle or englishTitle == "" then
+        Debug("NOT FOUND (no id, no title)")
+        return nil
+    end
     local t = NormalizeTitle(englishTitle)
 
     local list = byTitleList[t]
     if list then
-        Debug("FOUND by exact title")
+        Debug("FOUND by exact title (n=" .. tostring(table.getn(list)) .. ")")
         return PickFromList(list, qid)
     end
 
@@ -421,7 +691,6 @@ local function FindTranslation(englishTitle)
     list = byTitleList["[*] " .. t] or byTitleLowerList[string.lower("[*] " .. t)]
     if list then return PickFromList(list, qid) end
 
-    -- 2) М'який збіг через індекс (O(1), без повного pairs)
     local soft = SoftKey(t)
     if soft ~= "" then
         local lst = byTitleSoftList[soft]
@@ -432,6 +701,16 @@ local function FindTranslation(englishTitle)
     end
 
     Debug("NOT FOUND title=[" .. t .. "] qid=" .. tostring(qid))
+    return nil
+end
+
+local function FindTranslationUniqueTitle(englishTitle)
+    if not englishTitle or englishTitle == "" then return nil end
+    local t = NormalizeTitle(englishTitle)
+    local list = byTitleList[t] or byTitleLowerList[string.lower(t)]
+    if list and table.getn(list) == 1 then
+        return list[1]
+    end
     return nil
 end
 
@@ -991,6 +1270,30 @@ local function TranslateQuestLogDetails()
     end
 end
 
+-- Переклад одного рядка журналу: ID з індексу, без скану pfDB на кожен hover
+local function FindTranslationForLogRow(logIndex, title)
+    local qid = QuestIdFromLogIndex and QuestIdFromLogIndex(logIndex) or nil
+    if qid then
+        local row = DB[qid] or DB[tostring(qid)]
+        if type(row) == "table" then
+            row.id = qid
+            return row
+        end
+    end
+    if not title or title == "" then return nil end
+    local t = NormalizeTitle(title)
+    local list = byTitleList[t] or byTitleLowerList[string.lower(t)]
+    if not list then return nil end
+    if table.getn(list) == 1 then return list[1] end
+    -- кілька одноіменних: повний розбір лише для ВИБРАНОГО рядка
+    local sel = GetQuestLogSelection and GetQuestLogSelection() or 0
+    if sel == logIndex then
+        return FindTranslation(title)
+    end
+    -- інакше не чіпаємо (лишаємо EN), щоб при hover не стрибали назви
+    return nil
+end
+
 local function TranslateQuestLogList()
     if OceUA_IsEnabled and not OceUA_IsEnabled("quest") then return end
     if not showUA then return end
@@ -1003,7 +1306,7 @@ local function TranslateQuestLogList()
         if qt and not isHeader then
             local clean = string.gsub(qt, "%s*%-%s*%([^%)]+%)%s*$", "")
             clean = string.gsub(clean, "%s*%([^%)]+%)%s*$", "")
-            local tr = FindTranslation(clean)
+            local tr = FindTranslationForLogRow(i, clean)
             local btn = getglobal("QuestLogTitle" .. i)
             if not btn then btn = getglobal("QuestLogTitleButton" .. i) end
             if btn then
@@ -1011,15 +1314,19 @@ local function TranslateQuestLogList()
                 if tr and tr.T then
                     label = FormatQuestText(tr.T)
                 end
-                -- рівень біля назви в списку
                 if level and tonumber(level) and tonumber(level) > 0 then
                     label = "[" .. tostring(level) .. "] " .. label
                 end
                 local nt = getglobal((btn:GetName() or "") .. "NormalText")
                 if nt then
-                    nt:SetText(label)
+                    -- не дергати SetText якщо вже те саме (менше ривків)
+                    if nt:GetText() ~= label then
+                        nt:SetText(label)
+                    end
                 elseif btn.SetText then
-                    btn:SetText(label)
+                    if not btn.GetText or btn:GetText() ~= label then
+                        btn:SetText(label)
+                    end
                 end
             end
             local tagFS = getglobal("QuestLogTitle" .. i .. "Tag")
@@ -1041,10 +1348,25 @@ local function TranslateQuestLog()
     TranslateQuestLogDetails()
 end
 
--- без затримки = без блимання EN→UA; клієнт уже намалював кадр — одразу перебиваємо
+-- МИТТЄВИЙ переклад після малюнку клієнта (без delay = без кадру EN→UA)
+local oqLogPend = false
+local oqLogTh = CreateFrame("Frame")
+oqLogTh:Hide()
+oqLogTh:SetScript("OnUpdate", function()
+    this.t = (this.t or 0) + arg1
+    if this.t < 0.25 then return end
+    this.t = 0
+    this:Hide()
+    if oqLogPend and QuestLogFrame and QuestLogFrame:IsVisible() then
+        oqLogPend = false
+        pcall(TranslateQuestLog)
+    end
+end)
 local function ScheduleQuestLogTranslate()
     if not QuestLogFrame or not QuestLogFrame:IsVisible() then return end
-    pcall(TranslateQuestLog)
+    oqLogPend = true
+    oqLogTh.t = 0
+    oqLogTh:Show()
 end
 
 if QuestLogFrame then
@@ -1059,14 +1381,17 @@ if type(QuestLog_UpdateQuestDetails) == "function" then
     local _oldDetails = QuestLog_UpdateQuestDetails
     QuestLog_UpdateQuestDetails = function(a1, a2, a3, a4)
         _oldDetails(a1, a2, a3, a4)
-        ScheduleQuestLogTranslate()
+        -- деталі після вибору рядка
+        if QuestLogFrame and QuestLogFrame:IsVisible() and showUA then
+            pcall(TranslateQuestLogDetails)
+        end
     end
 end
 if type(QuestLog_Update) == "function" then
     local _oldQLU = QuestLog_Update
     QuestLog_Update = function(a1, a2, a3, a4)
         _oldQLU(a1, a2, a3, a4)
-        ScheduleQuestLogTranslate()
+        -- не перекладати список на кожен Update (hover) — лише деталі при виборі
     end
 end
 
@@ -1883,10 +2208,17 @@ local function BuildQuestList()
                     if id then qid = tonumber(id) end
                 end
             end
-            local tr = FindTranslation(clean)
+            -- легкий lookup (без pfDB-скану на кожен квест журналу)
+            local tr = nil
+            if FindTranslationForLogRow then
+                tr = FindTranslationForLogRow(i, clean)
+            end
             if not tr and qid and DB then
                 local row = DB[qid] or DB[tostring(qid)]
                 if type(row) == "table" then tr = row; tr.id = qid end
+            end
+            if not tr and FindTranslationUniqueTitle then
+                tr = FindTranslationUniqueTitle(clean)
             end
             local watched = false
             if IsQuestWatched and IsQuestWatched(i) then watched = true end
@@ -2327,6 +2659,7 @@ for li = 1, TRK_MAX do
         this.hoverBg:SetVertexColor(0.2, 0.18, 0.28, 0.28)
         this.hoverBg:Show()
         GameTooltip:SetOwner(this, "ANCHOR_LEFT")
+        GameTooltip.oceua_light = true  -- вже UA, без OceTip-обробки
         local title = e.tr and e.tr.T and FormatQuestText(e.tr.T) or e.en
         local lv = e.level
         if lv and tonumber(lv) and tonumber(lv) > 0 then
@@ -3541,12 +3874,11 @@ end
 local function OceTip_TranslateTitle(en)
     if not en or en == "" then return en end
     if HasCyrQ and HasCyrQ(en) then return en end
-    if FindTranslation then
-        local tr = FindTranslation(en)
-        if tr and tr.T then
-            if FormatQuestText then return FormatQuestText(tr.T) end
-            return tr.T
-        end
+    -- лише унікальна назва (без важкого PickFromList / pfDB-скану на hover)
+    local tr = FindTranslationUniqueTitle and FindTranslationUniqueTitle(en) or nil
+    if tr and tr.T then
+        if FormatQuestText then return FormatQuestText(tr.T) end
+        return tr.T
     end
     return en
 end
@@ -3856,6 +4188,8 @@ local function OceTip_ConvertLine(text)
 end
 
 local function OceTip_RescanLines(tip)
+
+    if tip and tip.oceua_light then return end
     if not tip or not tip.NumLines or not tip.GetName then return end
     if tip._oceua_scanning then return end
     local tname = tip:GetName()
@@ -3900,7 +4234,7 @@ local function OceTip_HookTooltip(tip)
     if oldAddLine then
         -- 1.12: AddLine(text, r, g, b, wrapText)
         tip.AddLine = function(self, text, r, g, b, wrap)
-            if self._oceua_scanning then
+            if self._oceua_scanning or self.oceua_light then
                 return oldAddLine(self, text, r, g, b, wrap)
             end
             local neu = OceTip_ConvertLine(text)
@@ -3929,8 +4263,10 @@ local function OceTip_HookTooltip(tip)
     local oldShow = tip.Show
     if oldShow then
         tip.Show = function(self)
-            if not self._oceua_scanning then
+            -- rescan лише раз на показ (менше ривків рамки)
+            if not self._oceua_scanning and not self._oceua_rescanned then
                 OceTip_RescanLines(self)
+                self._oceua_rescanned = true
             end
             return oldShow(self)
         end
@@ -3944,6 +4280,8 @@ local function OceTip_HookTooltip(tip)
     local oldOnHide = tip:GetScript("OnHide")
     tip:SetScript("OnHide", function()
         oceTipLastQuestEN = nil
+        this._oceua_rescanned = nil
+        this.oceua_light = nil
         if oldOnHide then oldOnHide() end
     end)
 end
