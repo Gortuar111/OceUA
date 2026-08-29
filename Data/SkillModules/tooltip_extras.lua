@@ -122,7 +122,7 @@ OceUA_tooltip_extras = {
   
   -- other
   ["A little something from Speedy to keep you steady on your journey."] = "Невеличкий подарунок від Спіді, щоб ви почувалися впевнено у своїй подорожі.",
-  [""] = "",
+  ["You are here"] = "Ти зараз тут",
   [""] = "",
   [""] = "",
   [""] = "",

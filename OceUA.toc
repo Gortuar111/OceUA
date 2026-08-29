@@ -73,5 +73,6 @@ BookUA.lua
 GossipUA.lua
 QuestUA.lua
 SkillUA.lua
+Data\Combat_Feedback.lua
 UnitUA.lua
 NameplateUA.lua

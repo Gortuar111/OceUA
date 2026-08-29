@@ -554,7 +554,7 @@ local function PickFromList(list, preferredId)
         end
     end
     -- потрібен явний відрив, щоб не вгадати сусіда
-    if best and bestScore >= 80 and (bestScore > secondScore or secondScore == 0) then
+    if best and bestScore >= 30 and (bestScore > secondScore or secondScore == 0) then
         Debug("PickFromList: hints id=" .. tostring(best.id) .. " score=" .. tostring(bestScore) .. " 2nd=" .. tostring(secondScore))
         return best
     end
@@ -569,9 +569,13 @@ local function ResolveQuestIdViaPfDB(titleHint)
     if not pfDB then return nil end
     local qt = (GetQuestText and GetQuestText()) or ""
     local ot = (GetObjectiveText and GetObjectiveText()) or ""
+    local pt = (GetProgressText and GetProgressText()) or ""
+    local rt = (GetRewardText and GetRewardText()) or ""
     qt = NormCmp(qt)
     ot = NormCmp(ot)
-    if qt == "" and ot == "" then return nil end
+    pt = NormCmp(pt)
+    rt = NormCmp(rt)
+    if qt == "" and ot == "" and pt == "" and rt == "" then return nil end
 
     local ok, enUS = pcall(function()
         if pfDB["quests"] and pfDB["quests"]["enUS"] then return pfDB["quests"]["enUS"] end
@@ -610,6 +614,18 @@ local function ResolveQuestIdViaPfDB(titleHint)
             elseif string.len(ot) >= 30 and string.sub(ot, 1, 30) == string.sub(eo, 1, 30) then sc = sc + 200
             end
         end
+        local ep = NormCmp(row["P"] or row.P or "")
+        local ec = NormCmp(row["C"] or row.C or "")
+        if pt ~= "" and ep ~= "" then
+            if pt == ep then sc = sc + 300
+            elseif string.len(pt) >= 30 and string.sub(pt, 1, 30) == string.sub(ep, 1, 30) then sc = sc + 200
+            end
+        end
+        if rt ~= "" and ec ~= "" then
+            if rt == ec then sc = sc + 300
+            elseif string.len(rt) >= 30 and string.sub(rt, 1, 30) == string.sub(ec, 1, 30) then sc = sc + 200
+            end
+        end
         if sc > bestScore then bestScore = sc; bestId = nid end
     end
 
@@ -631,6 +647,61 @@ local function ResolveQuestIdViaPfDB(titleHint)
         return bestId
     end
     return nil
+end
+
+
+-- Синхронізувати вибір у журналі з назвою вікна квесту (здача без відкриття журналу)
+local function EnsureLogSelectionForTitle(title)
+    if not title or title == "" then return nil end
+    if not GetNumQuestLogEntries or not GetQuestLogTitle or not SelectQuestLogEntry then return nil end
+    -- НЕ чіпати журнал, коли гравець просто гортає Quest Log (ламає переклад + блимкання)
+    if QuestLogFrame and QuestLogFrame:IsVisible() then
+        if not (QuestFrame and QuestFrame:IsVisible()) then
+            return nil
+        end
+    end
+    local want = NormalizeTitle(title)
+    if want == "" then return nil end
+    local indices = {}
+    local n = GetNumQuestLogEntries() or 0
+    local i
+    for i = 1, n do
+        local t, _, _, isHeader = GetQuestLogTitle(i)
+        if not isHeader and t and NormalizeTitle(t) == want then
+            indices[table.getn(indices) + 1] = i
+        end
+    end
+    if table.getn(indices) == 0 then return nil end
+    if table.getn(indices) == 1 then
+        SelectQuestLogEntry(indices[1])
+        return QuestIdFromLogIndex(indices[1])
+    end
+    -- кілька одноіменних у журналі: обрати за текстом вікна (Progress/Objectives)
+    local bestIdx, bestSc, second = nil, 0, 0
+    for i = 1, table.getn(indices) do
+        local idx = indices[i]
+        SelectQuestLogEntry(idx)
+        local id = QuestIdFromLogIndex(idx)
+        local row = id and (DB[id] or DB[tostring(id)]) or nil
+        local sc = 0
+        if ScoreByClientHints and id then
+            sc = ScoreByClientHints(id, row)
+        end
+        if sc > bestSc then
+            second = bestSc
+            bestSc = sc
+            bestIdx = idx
+        elseif sc > second then
+            second = sc
+        end
+    end
+    if bestIdx and bestSc >= 30 and bestSc > second then
+        SelectQuestLogEntry(bestIdx)
+        return QuestIdFromLogIndex(bestIdx)
+    end
+    -- fallback: перший збіг у журналі
+    SelectQuestLogEntry(indices[1])
+    return QuestIdFromLogIndex(indices[1])
 end
 
 local function FindTranslation(englishTitle)
@@ -745,6 +816,7 @@ local function TranslateDetail()
     local title = GetTitleText and GetTitleText() or nil
     Debug("DETAIL title=[" .. tostring(title) .. "]")
     if not title then return end
+    if EnsureLogSelectionForTitle then EnsureLogSelectionForTitle(title) end
     if not showUA then
         if QuestTitleText then QuestTitleText:SetText(title) end
         if QuestDescription and GetQuestText then QuestDescription:SetText(GetQuestText()) end
@@ -767,6 +839,7 @@ local function TranslateProgress()
     local title = GetTitleText and GetTitleText() or nil
     Debug("PROGRESS title=[" .. tostring(title) .. "]")
     if not title then return end
+    if EnsureLogSelectionForTitle then EnsureLogSelectionForTitle(title) end
     if not showUA then
         if QuestProgressTitleText then QuestProgressTitleText:SetText(title) end
         if QuestProgressText and GetProgressText then QuestProgressText:SetText(GetProgressText()) end
@@ -783,6 +856,7 @@ local function TranslateReward()
     local title = GetTitleText and GetTitleText() or nil
     Debug("REWARD title=[" .. tostring(title) .. "]")
     if not title then return end
+    if EnsureLogSelectionForTitle then EnsureLogSelectionForTitle(title) end
     if not showUA then
         if QuestRewardTitleText then QuestRewardTitleText:SetText(title) end
         if QuestRewardText and GetRewardText then QuestRewardText:SetText(GetRewardText()) end
@@ -1106,8 +1180,17 @@ end
 
 -- у рядку цілі замінити відомі EN-назви (довші першими не сортуємо масово —
 -- простий прохід: якщо весь рядок без лічильника збігається; або "Name: 0/10")
+-- прибрати прогрес pfQuest [37.03%] / [37%]
+local function StripProgressPercent(s)
+    if not s or s == "" then return s end
+    s = string.gsub(s, "%s*%[%s*%d+%.%d+%s*%%%s*%]", "")
+    s = string.gsub(s, "%s*%[%s*%d+%s*%%%s*%]", "")
+    return s
+end
+
 local function TranslateObjectiveLine(text)
     if not text or text == "" then return text end
+    text = StripProgressPercent(text)
     if string.find(text, "[А-Яа-яІіЇїЄєҐґ]") then return text end
 
     local original = text
@@ -1354,7 +1437,7 @@ local oqLogTh = CreateFrame("Frame")
 oqLogTh:Hide()
 oqLogTh:SetScript("OnUpdate", function()
     this.t = (this.t or 0) + arg1
-    if this.t < 0.25 then return end
+    if this.t < 0.05 then return end
     this.t = 0
     this:Hide()
     if oqLogPend and QuestLogFrame and QuestLogFrame:IsVisible() then
@@ -1391,7 +1474,9 @@ if type(QuestLog_Update) == "function" then
     local _oldQLU = QuestLog_Update
     QuestLog_Update = function(a1, a2, a3, a4)
         _oldQLU(a1, a2, a3, a4)
-        -- не перекладати список на кожен Update (hover) — лише деталі при виборі
+        if QuestLogFrame and QuestLogFrame:IsVisible() and showUA then
+            pcall(TranslateQuestLogList)
+        end
     end
 end
 
@@ -2648,16 +2733,21 @@ for li = 1, TRK_MAX do
         BorderFadeTo(1)
         local e = this.entry
         if not e then return end
-        -- підсвітка: одна, ледь темна, м'які краї, трохи більша
-        if not this.hoverBg then
-            this.hoverBg = this:CreateTexture(nil, "BACKGROUND")
-            this.hoverBg:SetTexture("Interface\\QuestFrame\\UI-QuestLogTitleHighlight")
+        -- рамка: окремий Frame + WHITE8X8 (завжди видно, під текстом)
+        if not this.hoverFrame then
+            this.hoverFrame = CreateFrame("Frame", nil, this)
+            this.hoverFrame:SetFrameLevel(0)
+            this.hoverBg = this.hoverFrame:CreateTexture(nil, "BACKGROUND")
+            this.hoverBg:SetAllPoints(this.hoverFrame)
+            this.hoverBg:SetTexture("Interface\\Buttons\\WHITE8X8")
         end
-        this.hoverBg:ClearAllPoints()
-        this.hoverBg:SetPoint("TOPLEFT", this, "TOPLEFT", -3, 3)
-        this.hoverBg:SetPoint("BOTTOMRIGHT", this, "BOTTOMRIGHT", 3, -3)
-        this.hoverBg:SetVertexColor(0.2, 0.18, 0.28, 0.28)
-        this.hoverBg:Show()
+        this.hoverFrame:ClearAllPoints()
+        this.hoverFrame:SetPoint("TOPLEFT", this, "TOPLEFT", -4, 4)
+        this.hoverFrame:SetPoint("BOTTOMRIGHT", this, "BOTTOMRIGHT", 4, -4)
+        this.hoverBg:SetVertexColor(0.10, 0.08, 0.14)
+        this.hoverBg:SetAlpha(0.20)
+        this.hoverFrame:Show()
+        if this.fs then this.fs:SetDrawLayer("OVERLAY") end
         GameTooltip:SetOwner(this, "ANCHOR_LEFT")
         GameTooltip.oceua_light = true  -- вже UA, без OceTip-обробки
         local title = e.tr and e.tr.T and FormatQuestText(e.tr.T) or e.en
@@ -2700,7 +2790,7 @@ for li = 1, TRK_MAX do
         end
         if not keep then
             GameTooltip:Hide()
-            if this.hoverBg then this.hoverBg:Hide() end
+            if this.hoverFrame then this.hoverFrame:Hide() elseif this.hoverBg then this.hoverBg:Hide() end
         end
         if not (MouseIsOver and MouseIsOver(trk)) then BorderFadeTo(0) end
     end)
@@ -2912,24 +3002,32 @@ local function SetTrkObjFont(fs)
     fs:SetFont(TrkFontPath(), TRK_OBJ_SIZE, "")
 end
 
--- зелений (0) → червоний (повністю); лише для лічильника N/M
+-- лічильник N/M: 0 = білий; 1..N-1 = градієнт заповнення; N = зелений
 local function CountColorCode(cur, maxv)
     cur = tonumber(cur) or 0
     maxv = tonumber(maxv) or 1
     if maxv < 1 then maxv = 1 end
+    if cur < 0 then cur = 0 end
+    if cur <= 0 then
+        return "|cffffffff"  -- 0/10 білий
+    end
+    if cur >= maxv then
+        return "|cff33ff66"  -- 10/10 зелений
+    end
+    -- 1/10 .. 9/10: жовтий → золотий → салатовий (заповнення)
     local t = cur / maxv
     if t < 0 then t = 0 end
     if t > 1 then t = 1 end
-    local r = 0.25 + t * 0.75
-    local g = 0.85 - t * 0.70
-    local b = 0.25 - t * 0.15
-    if b < 0 then b = 0 end
-    return string.format("|cff%02x%02x%02x", math.floor(r * 255), math.floor(g * 255), math.floor(b * 255))
+    local r = 1.00 - t * 0.40   -- 1.00 → 0.60
+    local g = 0.82 + t * 0.18   -- 0.82 → 1.00
+    local b = 0.20 + t * 0.25   -- 0.20 → 0.45
+    return string.format("|cff%02x%02x%02x", math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
 end
 
 local function FormatObjWithCountColor(body)
     -- "Name: 3/10" → "Name: |cff..3/10|r"
     if not body then return body end
+    if StripProgressPercent then body = StripProgressPercent(body) end
     local _, _, name, cur, maxv = string.find(body, "^(.-):%s*(%d+)/(%d+)%s*$")
     if name and cur and maxv then
         return "|cffffffff" .. name .. ":|r " .. CountColorCode(cur, maxv) .. cur .. "/" .. maxv .. "|r"
@@ -3374,7 +3472,7 @@ function OceUA_RefreshQuestTracker()
             else
                 plainBody = formatted
             end
-            -- коли зібрано — назва легкого зеленого, лічильник лишається червоним
+            -- коли зібрано — назва легкого зеленого, лічильник зелений (CountColorCode)
             local body
             if done and name and cnt then
                 local _, _, cur, maxv = string.find(cnt, "(%d+)/(%d+)")
@@ -3489,7 +3587,7 @@ function OceUA_RefreshQuestTracker()
         if lines[j].selBar then lines[j].selBar:Hide() end
         if lines[j].readyIcon then lines[j].readyIcon:Hide() end
         if lines[j].divBg then lines[j].divBg:Hide() end
-        if lines[j].hoverBg then lines[j].hoverBg:Hide() end
+        if lines[j].hoverFrame then lines[j].hoverFrame:Hide() elseif lines[j].hoverBg then lines[j].hoverBg:Hide() end
     end
 
     -- TranslatePfQuestFrames винесено з трекера (тяжкий обхід дерев фреймів)
@@ -3829,6 +3927,7 @@ local function OceTip_Strip(s)
     s = string.gsub(s, "|c%x%x%x%x%x%x%x%x", "")
     s = string.gsub(s, "|r", "")
     s = string.gsub(s, "|T.-|t", "")
+    s = StripProgressPercent(s)
     return s
 end
 
@@ -3871,11 +3970,58 @@ local function OceTip_IsObjCounter(plain)
     return false
 end
 
+local oceTipTrCache = {}
+local function OceTip_GetTrLight(enTitle)
+    if not enTitle or enTitle == "" then return nil end
+    local c = oceTipTrCache[enTitle]
+    if c ~= nil then
+        if c == false then return nil end
+        return c
+    end
+    local tr = FindTranslationUniqueTitle and FindTranslationUniqueTitle(enTitle) or nil
+    if not tr and byTitleList and NormalizeTitle then
+        local list = byTitleList[NormalizeTitle(enTitle)]
+        if list and table.getn(list) >= 1 then
+            -- якщо квест у журналі — взяти його ID (точніше для дублікатів назв)
+            if GetNumQuestLogEntries and GetQuestLogTitle and GetQuestLink then
+                local n = GetNumQuestLogEntries() or 0
+                local i, j
+                for i = 1, n do
+                    local qt, _, _, isHeader = GetQuestLogTitle(i)
+                    if not isHeader and qt then
+                        local clean = string.gsub(qt, "%s*%-%s*%([^%)]+%)%s*$", "")
+                        clean = string.gsub(clean, "%s*%([^%)]+%)%s*$", "")
+                        if string.lower(clean) == string.lower(enTitle) then
+                            local link = GetQuestLink(i)
+                            local qid = nil
+                            if link then
+                                local _, _, id = string.find(link, "quest:(%d+)")
+                                if id then qid = tonumber(id) end
+                            end
+                            if qid then
+                                for j = 1, table.getn(list) do
+                                    if list[j].id == qid or tostring(list[j].id) == tostring(qid) then
+                                        tr = list[j]
+                                        break
+                                    end
+                                end
+                            end
+                            break
+                        end
+                    end
+                end
+            end
+            if not tr then tr = list[1] end
+        end
+    end
+    oceTipTrCache[enTitle] = tr or false
+    return tr
+end
+
 local function OceTip_TranslateTitle(en)
     if not en or en == "" then return en end
     if HasCyrQ and HasCyrQ(en) then return en end
-    -- лише унікальна назва (без важкого PickFromList / pfDB-скану на hover)
-    local tr = FindTranslationUniqueTitle and FindTranslationUniqueTitle(en) or nil
+    local tr = OceTip_GetTrLight(en)
     if tr and tr.T then
         if FormatQuestText then return FormatQuestText(tr.T) end
         return tr.T
@@ -3935,8 +4081,8 @@ local function OceTip_TranslateQuestBody(en)
         return OceTip_TranslateObj(en)
     end
     local tr = nil
-    if oceTipLastQuestEN and FindTranslation then
-        tr = FindTranslation(oceTipLastQuestEN)
+    if oceTipLastQuestEN then
+        tr = OceTip_GetTrLight and OceTip_GetTrLight(oceTipLastQuestEN) or nil
     end
     if tr then
         -- довгий/реченнєвий рядок після [!] → це objectives або details
@@ -4080,7 +4226,7 @@ local function OceTip_StyleCounter(text)
     plain = string.gsub(plain, "^%- %s*", "")
     plain = string.gsub(plain, "^%-", "")
     plain = string.gsub(plain, "^%s+", "")
-    plain = string.gsub(plain, "%s*%[%d+%%%]%s*$", "")
+    plain = StripProgressPercent(plain)
     plain = string.gsub(plain, "%s+$", "")
 
     local ua = OceTip_TranslateObj(plain)
@@ -4098,7 +4244,7 @@ local function OceTip_StyleCounter(text)
     if name and cur and maxv then
         name = string.gsub(name, "^%s+", "")
         name = string.gsub(name, "%s+$", "")
-        local cntCol = "|cffff2020"
+        local cntCol = "|cffffffff"
         if CountColorCode then
             cntCol = CountColorCode(cur, maxv)
         end
@@ -4120,7 +4266,7 @@ local function OceTip_StyleBody(text)
     if OceTip_IsLevelLine(plain) then return text end  -- рівень лишаємо як є (вже UA від pfQuest)
     local ua = OceTip_TranslateQuestBody(plain)
     if ua and ua ~= plain and (HasCyrQ and HasCyrQ(ua)) then
-        ua = OceTip_WrapText(ua, OCE_TIP_WRAP)
+        -- counters: без wrap
         return "|cffcccccc" .. ua .. "|r"
     end
     -- навіть без перекладу — перенос дуже довгих рядків
@@ -4163,8 +4309,21 @@ end
 -- головний: лише квестові рядки pfQuest ([!]/[?] / - N/M)
 local function OceTip_ConvertLine(text)
     if not text or text == "" then return text end
+    -- Taxi: незалежно від модуля quest (назви з Zones)
+    if TaxiFrame and TaxiFrame.IsVisible and TaxiFrame:IsVisible() and OceUA_LookupZoneUA then
+        local p = string.gsub(text, "|c%x%x%x%x%x%x%x%x", "")
+        p = string.gsub(p, "|r", "")
+        p = string.gsub(p, "^%s+", "")
+        p = string.gsub(p, "%s+$", "")
+        local low = string.lower(p)
+        if p ~= "" and not string.find(low, "^cost") and not string.find(low, "you are here") then
+            local ua = OceUA_LookupZoneUA(p)
+            if ua then return ua end
+        end
+    end
     if OceUA_IsEnabled and not OceUA_IsEnabled("quest") then return text end
     if showUA == false then return text end
+    text = StripProgressPercent(text)
 
     local plain = OceTip_Strip(text)
     if plain == "" then return text end
@@ -4178,10 +4337,16 @@ local function OceTip_ConvertLine(text)
     if OceTip_IsObjCounter(plain) then
         return OceTip_StyleCounter(text)
     end
-    -- опис квесту: лише якщо вже був [!] і StyleBody підтвердить збіг з O/D
-    if oceTipLastQuestEN and not (HasCyrQ and HasCyrQ(plain)) and string.len(plain) > 18 then
-        if not OceTip_IsLevelLine(plain) then
-            return OceTip_StyleBody(text)
+    -- після [!]/[?]: опис/objectives з бази (легкий кеш, без FindTranslation)
+    if oceTipLastQuestEN and not (HasCyrQ and HasCyrQ(plain)) then
+        if OceTip_IsLevelLine(plain) then return text end
+        if string.len(plain) > 12 then
+            local body = OceTip_StyleBody(text)
+            if body and body ~= text then return body end
+        end
+        if OceTip_LooksLikeName(plain) then
+            local t = OceTip_TranslateObj(plain)
+            if t and t ~= plain then return t end
         end
     end
     return text
@@ -4263,11 +4428,8 @@ local function OceTip_HookTooltip(tip)
     local oldShow = tip.Show
     if oldShow then
         tip.Show = function(self)
-            -- rescan лише раз на показ (менше ривків рамки)
-            if not self._oceua_scanning and not self._oceua_rescanned then
-                OceTip_RescanLines(self)
-                self._oceua_rescanned = true
-            end
+            -- без RescanLines на кожен Show: AddLine уже переклав — rescan = подвійна робота і лаг
+            self._oceua_rescanned = true
             return oldShow(self)
         end
     end

@@ -684,6 +684,7 @@ OceUA_Zones_Dictionary = {
   ["Stonewrought Pass"] = "Перевал Стоунраут",  -- 2838
   ["Stormpike Graveyard"] = "Кладовище Штормпайк",  -- 3303
   ["Stormrage Barrow Dens"] = "Лігва Штормрейджа",  -- 2363
+  ["Stormwind"] = "Штормвінд",  -- xxx
   ["Stormwind City"] = "Місто Штормвінд",  -- 1519
   ["Stormwind Mountains"] = "Гори Штормвінд",  -- 80
   ["Stoutlager Inn"] = "Готель «Стаутлагер»",  -- 2101

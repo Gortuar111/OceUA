@@ -122,22 +122,30 @@ end
 
 local function TranslateZoneName(en)
   if not en or en == "" then return en end
+  if OceUA_TranslateZoneName then
+    local z = OceUA_TranslateZoneName(en)
+    if z then return z end
+  end
   local function lookup(dict, key)
     if not dict or not key then return nil end
     local ua = dict[key]
     if ua and ua ~= "" and ua ~= key then return ua end
     return nil
   end
-  -- 1) повна база зон (pfQuest)
   local ua = lookup(OceUA_Zones_Dictionary, en)
   if ua then return ua end
-  -- 2) вивіски / старі переклади
-  ua = lookup(OceUA_Signs_Dictionary, en)
-  if ua then return ua end
-  -- без The
   local stripped = string.gsub(en, "^[Tt]he%s+", "")
   if stripped ~= en then
-    ua = lookup(OceUA_Zones_Dictionary, stripped) or lookup(OceUA_Signs_Dictionary, stripped)
+    ua = lookup(OceUA_Zones_Dictionary, stripped)
+    if ua then return ua end
+  end
+  -- Signs лише якщо ключа немає в Zones (без дублікатів)
+  if not (OceUA_Zones_Dictionary and OceUA_Zones_Dictionary[en]) then
+    ua = lookup(OceUA_Signs_Dictionary, en)
+    if ua then return ua end
+  end
+  if stripped ~= en and not (OceUA_Zones_Dictionary and OceUA_Zones_Dictionary[stripped]) then
+    ua = lookup(OceUA_Signs_Dictionary, stripped)
     if ua then return ua end
   end
   return en
@@ -1875,11 +1883,14 @@ end
 -- Чи тултіп ще англійською (перший рядок без кирилиці)?
 local function TooltipNeedsUA(tooltip)
   if not tooltip or not tooltip.GetName then return false end
+  if tooltip.oceua_light then return false end
   local fs = getglobal(tooltip:GetName() .. "TextLeft1")
   if not fs or not fs.GetText then return false end
   local tx = fs:GetText()
   if not tx or tx == "" then return false end
   if HasCyrillic(tx) then return false end
+  -- pfQuest / квестові маркери — OceTip, не SkillUA (уникнути подвійної роботи)
+  if string.find(tx, "%[!%]") or string.find(tx, "%[%?%]") then return false end
   return true
 end
 
@@ -2695,14 +2706,12 @@ local function ProcessCraftList()
   end
 end
 
-local function ProcessTradeSkillDetails()
+-- Деталі + список + реагенти БЕЗ повного WalkFrameFonts (швидко, для кліку по рецепту)
+local function ProcessTradeSkillDetailsCore()
   if not SkillEnabled() then return end
 
   if TradeSkillFrame and TradeSkillFrame:IsVisible() then
-    -- повний обхід усього вікна (фільтри, список, кнопки, реагенти)
-    WalkFrameFonts(TradeSkillFrame, 0)
     ProcessTradeSkillList()
-
     SetFSTextUA(TradeSkillSkillName)
     SetFSTextUA(TradeSkillDescription)
     SetFSTextUA(TradeSkillRequirementLabel)
@@ -2713,24 +2722,14 @@ local function ProcessTradeSkillDetails()
     SetFSTextUA(TradeSkillCreateAllButton)
     SetFSTextUA(TradeSkillCancelButton)
     SetFSTextUA(TradeSkillExitButton)
-
-    -- реагенти 1..8
     local ri
     for ri = 1, 8 do
       SetFSTextUA(getglobal("TradeSkillReagent" .. ri .. "Name"))
       SetFSTextUA(getglobal("TradeSkillReagent" .. ri .. "Count"))
-      local rg = getglobal("TradeSkillReagent" .. ri)
-      if rg then WalkFrameFonts(rg, 0) end
-    end
-
-    -- інколи прогрес-бар: "Leatherworking 1/75"
-    if TradeSkillRankFrame and TradeSkillRankFrame.GetRegions then
-      WalkFrameFonts(TradeSkillRankFrame, 0)
     end
   end
 
   if CraftFrame and CraftFrame:IsVisible() then
-    WalkFrameFonts(CraftFrame, 0)
     ProcessCraftList()
     SetFSTextUA(CraftName)
     SetFSTextUA(CraftDescription)
@@ -2742,9 +2741,88 @@ local function ProcessTradeSkillDetails()
     local ri
     for ri = 1, 8 do
       SetFSTextUA(getglobal("CraftReagent" .. ri .. "Name"))
-      local rg = getglobal("CraftReagent" .. ri)
-      if rg then WalkFrameFonts(rg, 0) end
+      SetFSTextUA(getglobal("CraftReagent" .. ri .. "Count"))
     end
+  end
+end
+
+-- лише лічильники реагентів (під час крафту)
+local function ProcessTradeSkillDetailsLight()
+  if not SkillEnabled() then return end
+  if TradeSkillFrame and TradeSkillFrame:IsVisible() then
+    local ri
+    for ri = 1, 8 do
+      SetFSTextUA(getglobal("TradeSkillReagent" .. ri .. "Name"))
+      SetFSTextUA(getglobal("TradeSkillReagent" .. ri .. "Count"))
+    end
+  end
+  if CraftFrame and CraftFrame:IsVisible() then
+    local ri
+    for ri = 1, 8 do
+      SetFSTextUA(getglobal("CraftReagent" .. ri .. "Name"))
+      SetFSTextUA(getglobal("CraftReagent" .. ri .. "Count"))
+    end
+  end
+end
+
+-- mode: "core" | "light" | "full"
+local tsPend, tsMode = false, "core"
+local tsTh = CreateFrame("Frame")
+tsTh:Hide()
+tsTh:SetScript("OnUpdate", function()
+  this.t = (this.t or 0) + (arg1 or 0)
+  local need = 0.05
+  if tsMode == "light" then need = 0.12 end
+  if this.t < need then return end
+  this.t = 0
+  this:Hide()
+  if not tsPend then return end
+  tsPend = false
+  local mode = tsMode
+  tsMode = "core"
+  if mode == "full" then
+    pcall(ProcessTradeSkillDetails)
+  elseif mode == "light" then
+    pcall(ProcessTradeSkillDetailsLight)
+  else
+    pcall(ProcessTradeSkillDetailsCore)
+  end
+end)
+
+local function ScheduleTradeSkillTranslate(mode)
+  if not SkillEnabled() then return end
+  mode = mode or "core"
+  -- пріоритет: full > core > light
+  if tsPend then
+    if tsMode == "full" then
+      -- лишаємо full
+    elseif mode == "full" then
+      tsMode = "full"
+    elseif tsMode == "light" and mode == "core" then
+      tsMode = "core"
+    end
+  else
+    tsMode = mode
+  end
+  tsPend = true
+  tsTh.t = 0
+  tsTh:Show()
+end
+
+local function ProcessTradeSkillDetails()
+  if not SkillEnabled() then return end
+
+  if TradeSkillFrame and TradeSkillFrame:IsVisible() then
+    WalkFrameFonts(TradeSkillFrame, 0)
+    ProcessTradeSkillDetailsCore()
+    if TradeSkillRankFrame and TradeSkillRankFrame.GetRegions then
+      WalkFrameFonts(TradeSkillRankFrame, 0)
+    end
+  end
+
+  if CraftFrame and CraftFrame:IsVisible() then
+    WalkFrameFonts(CraftFrame, 0)
+    ProcessTradeSkillDetailsCore()
   end
 end
 
@@ -3385,13 +3463,15 @@ local function HookTooltipMethods()
 
     if this.oceItemTip or this.oceNoDual then
       -- екіп / бафи: лише якщо знову з'явився EN (без циклу)
-      if TooltipNeedsUA(this) then
-        this.oceDone = nil
+      if (not this.oceDone) and TooltipNeedsUA(this) then
         ProcessTooltip(this)
       end
-    elseif this.ocePending or TooltipNeedsUA(this) then
+    elseif this.ocePending then
       this.ocePending = nil
-      this.oceDone = nil
+      ProcessTooltip(this)
+      this.oceLastSig = TooltipSignature(this)
+    elseif (not this.oceDone) and TooltipNeedsUA(this) then
+      -- один прохід, не кожен кадр
       ProcessTooltip(this)
       this.oceLastSig = TooltipSignature(this)
     end
@@ -3525,106 +3605,114 @@ end
 -- Хуки тренера / професій (деталі внизу вікна)
 -- ============================================================
 local function HookFrames()
-  -- Class Trainer: коли вибирають скіл
-  if ClassTrainer_Update then
-    local oldUpd = ClassTrainer_Update
-    ClassTrainer_Update = function(a1, a2, a3, a4)
-      oldUpd(a1, a2, a3, a4)
-      if SkillEnabled() then
+  -- Class Trainer (один раз)
+  if not OceUA_SkillTrainerHooked then
+    if ClassTrainer_Update then
+      local oldUpd = ClassTrainer_Update
+      ClassTrainer_Update = function(a1, a2, a3, a4)
+        oldUpd(a1, a2, a3, a4)
+        if SkillEnabled() then
+          ProcessTrainerDetails()
+          ScheduleTrainerTranslate()
+        end
+      end
+    end
+    if ClassTrainer_SetSelection then
+      local old = ClassTrainer_SetSelection
+      ClassTrainer_SetSelection = function(id)
+        old(id)
         ProcessTrainerDetails()
         ScheduleTrainerTranslate()
       end
     end
-  end
-  if ClassTrainer_SetSelection then
-    local old = ClassTrainer_SetSelection
-    ClassTrainer_SetSelection = function(id)
-      old(id)
-      ProcessTrainerDetails()
-      ScheduleTrainerTranslate()
+    if ClassTrainerFrame then
+      local oldShow = ClassTrainerFrame:GetScript("OnShow")
+      ClassTrainerFrame:SetScript("OnShow", function()
+        if oldShow then oldShow() end
+        ProcessTrainerDetails()
+        ScheduleTrainerTranslate()
+      end)
+      OceUA_SkillTrainerHooked = true
     end
   end
 
-  -- Також на OnShow / оновлення
-  if ClassTrainerFrame then
-    local oldShow = ClassTrainerFrame:GetScript("OnShow")
-    ClassTrainerFrame:SetScript("OnShow", function()
-      if oldShow then oldShow() end
-      ProcessTrainerDetails()
-      ScheduleTrainerTranslate()
-    end)
-  end
-
-  -- Spellbook
-  if SpellBookFrame then
+  -- Spellbook (один раз, коли фрейм є)
+  if not OceUA_SkillSpellbookHooked and SpellBookFrame then
     local oldSBShow = SpellBookFrame:GetScript("OnShow")
     SpellBookFrame:SetScript("OnShow", function()
       if oldSBShow then oldSBShow() end
       ScheduleSpellBookTranslate()
     end)
-  end
-  if SpellBookFrame_Update then
-    local oldSBU = SpellBookFrame_Update
-    SpellBookFrame_Update = function(a1, a2, a3, a4)
-      oldSBU(a1, a2, a3, a4)
-      if SkillEnabled() then ScheduleSpellBookTranslate() end
-    end
-  end
-  if SpellButton_UpdateButton then
-    local oldSBtn = SpellButton_UpdateButton
-    SpellButton_UpdateButton = function(a1, a2, a3, a4)
-      oldSBtn(a1, a2, a3, a4)
-      if SkillEnabled() and SpellBookFrame and SpellBookFrame:IsVisible() then
-        ProcessSpellBook()
+    if SpellBookFrame_Update then
+      local oldSBU = SpellBookFrame_Update
+      SpellBookFrame_Update = function(a1, a2, a3, a4)
+        oldSBU(a1, a2, a3, a4)
+        if SkillEnabled() then ScheduleSpellBookTranslate() end
       end
     end
+    if SpellButton_UpdateButton then
+      local oldSBtn = SpellButton_UpdateButton
+      SpellButton_UpdateButton = function(a1, a2, a3, a4)
+        oldSBtn(a1, a2, a3, a4)
+        if SkillEnabled() and SpellBookFrame and SpellBookFrame:IsVisible() then
+          ProcessSpellBook()
+        end
+      end
+    end
+    OceUA_SkillSpellbookHooked = true
   end
 
+  -- TradeSkill (один раз, коли API/фрейм з'явились)
+  if not OceUA_SkillTradeHooked and (TradeSkillFrame_SetSelection or TradeSkillFrame) then
+    if TradeSkillFrame_SetSelection then
+      local old = TradeSkillFrame_SetSelection
+      TradeSkillFrame_SetSelection = function(id)
+        old(id)
+        -- миттєво в тому ж кадрі після EN від клієнта (без delay = без блимання)
+        pcall(ProcessTradeSkillDetailsCore)
+      end
+    end
+    if TradeSkillFrame_Update then
+      local oldU = TradeSkillFrame_Update
+      TradeSkillFrame_Update = function(a1, a2, a3, a4)
+        oldU(a1, a2, a3, a4)
+        pcall(ProcessTradeSkillDetailsCore)
+      end
+    end
+    if TradeSkillFrame then
+      local oldShow = TradeSkillFrame:GetScript("OnShow")
+      TradeSkillFrame:SetScript("OnShow", function()
+        if oldShow then oldShow() end
+        pcall(ProcessTradeSkillDetails)
+      end)
+    end
+    OceUA_SkillTradeHooked = true
+  end
 
-  -- TradeSkill
-  if TradeSkillFrame_SetSelection then
-    local old = TradeSkillFrame_SetSelection
-    TradeSkillFrame_SetSelection = function(id)
-      old(id)
-      ProcessTradeSkillDetails()
+  -- Craft / Enchant (один раз)
+  if not OceUA_SkillCraftHooked and (CraftFrame_SetSelection or CraftFrame) then
+    if CraftFrame_SetSelection then
+      local old = CraftFrame_SetSelection
+      CraftFrame_SetSelection = function(id)
+        old(id)
+        pcall(ProcessTradeSkillDetailsCore)
+      end
     end
-  end
-  if TradeSkillFrame_Update then
-    local oldU = TradeSkillFrame_Update
-    TradeSkillFrame_Update = function(a1, a2, a3, a4)
-      oldU(a1, a2, a3, a4)
-      ProcessTradeSkillDetails()
+    if CraftFrame_Update then
+      local oldCU = CraftFrame_Update
+      CraftFrame_Update = function(a1, a2, a3, a4)
+        oldCU(a1, a2, a3, a4)
+        pcall(ProcessTradeSkillDetailsCore)
+      end
     end
-  end
-  if TradeSkillFrame then
-    local oldShow = TradeSkillFrame:GetScript("OnShow")
-    TradeSkillFrame:SetScript("OnShow", function()
-      if oldShow then oldShow() end
-      ProcessTradeSkillDetails()
-    end)
-  end
-
-  -- Craft
-  if CraftFrame_SetSelection then
-    local old = CraftFrame_SetSelection
-    CraftFrame_SetSelection = function(id)
-      old(id)
-      ProcessTradeSkillDetails()
+    if CraftFrame then
+      local oldCS = CraftFrame:GetScript("OnShow")
+      CraftFrame:SetScript("OnShow", function()
+        if oldCS then oldCS() end
+        pcall(ProcessTradeSkillDetails)
+      end)
     end
-  end
-  if CraftFrame_Update then
-    local oldCU = CraftFrame_Update
-    CraftFrame_Update = function(a1, a2, a3, a4)
-      oldCU(a1, a2, a3, a4)
-      ProcessTradeSkillDetails()
-    end
-  end
-  if CraftFrame then
-    local oldCS = CraftFrame:GetScript("OnShow")
-    CraftFrame:SetScript("OnShow", function()
-      if oldCS then oldCS() end
-      ProcessTradeSkillDetails()
-    end)
+    OceUA_SkillCraftHooked = true
   end
 end
 
@@ -3689,10 +3777,12 @@ eventFrame:SetScript("OnEvent", function()
   elseif event == "TRAINER_SHOW" or event == "TRAINER_UPDATE" then
     HookFrames()
     ProcessTrainerDetails()
-  elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_UPDATE"
-      or event == "CRAFT_SHOW" or event == "CRAFT_UPDATE" then
+  elseif event == "TRADE_SKILL_SHOW" or event == "CRAFT_SHOW" then
     HookFrames()
     ProcessTradeSkillDetails()
+  elseif event == "TRADE_SKILL_UPDATE" or event == "CRAFT_UPDATE" then
+    -- крафт start/finish: лише лічильники
+    ScheduleTradeSkillTranslate("light")
   end
 end)
 
@@ -3835,6 +3925,33 @@ end
 -- UIErrorsFrame: skill-up / learn messages (без миготіння — переклад у момент AddMessage)
 local function TranslateErrorMessage(msg)
   if not msg or msg == "" or HasCyrillic(msg) then return msg end
+  if OceUA_Combat_Feedback and OceUA_Combat_Feedback[msg] then
+    return OceUA_Combat_Feedback[msg]
+  end
+  if OceUA_Combat_Feedback and OceUA_Combat_Feedback[string.upper(msg)] then
+    return OceUA_Combat_Feedback[string.upper(msg)]
+  end
+
+  local function nameUA(en)
+    if not en or en == "" then return en end
+    en = string.gsub(en, "^%s+", "")
+    en = string.gsub(en, "%s+$", "")
+    if LookupItemUA then
+      local u = LookupItemUA(en)
+      if u and u ~= en then return u end
+    end
+    if OceUA_ITEM_DICT and OceUA_ITEM_DICT[en] then return OceUA_ITEM_DICT[en] end
+    if OceUA_World_Names and OceUA_World_Names[en] then return OceUA_World_Names[en] end
+    if OceUA_NPC_Names and OceUA_NPC_Names[en] then return OceUA_NPC_Names[en] end
+    if OceUA_Skill_Dictionary and OceUA_Skill_Dictionary[en] then return OceUA_Skill_Dictionary[en] end
+    if OceUA_Profession_Names and OceUA_Profession_Names[en] then return OceUA_Profession_Names[en] end
+    if TranslateObjectiveLine then
+      local u = TranslateObjectiveLine(en)
+      if u and u ~= en then return u end
+    end
+    return en
+  end
+
   -- Your skill in X has increased to Y.
   local _, _, skill, rank = string.find(msg, "^Your skill in (.+) has increased to (%d+)%.?$")
   if skill and rank then
@@ -3855,6 +3972,102 @@ local function TranslateErrorMessage(msg)
     local ua = LookupItemUA(recipe) or recipe
     return "Ви вивчили: " .. ua
   end
+
+  -- Quest progress / kill / loot style messages on screen
+  -- "Name slain: 3/10" / "Name: 3/10"
+  local _, _, nm, cur, maxv = string.find(msg, "^(.+)%s+slain:%s*(%d+)%s*/%s*(%d+)%s*$")
+  if nm and cur and maxv then
+    return nameUA(nm) .. " убито: " .. cur .. "/" .. maxv
+  end
+  _, _, nm, cur, maxv = string.find(msg, "^(.+):%s*(%d+)%s*/%s*(%d+)%s*$")
+  if nm and cur and maxv then
+    return nameUA(nm) .. ": " .. cur .. "/" .. maxv
+  end
+  -- "Quest accepted: X" / "Quest completed: X"
+  local _, _, qn = string.find(msg, "^Quest accepted:%s*(.+)$")
+  if qn then return "Квест прийнято: " .. (nameUA(qn) or qn) end
+  _, _, qn = string.find(msg, "^Quest completed:%s*(.+)$")
+  if qn then return "Квест виконано: " .. (nameUA(qn) or qn) end
+  _, _, qn = string.find(msg, "^Received item:%s*(.+)$")
+  if qn then return "Отримано: " .. nameUA(qn) end
+  -- "Requires X" / "You need X"
+  local _, _, req = string.find(msg, "^Requires%s+(.+)$")
+  if req then return "Потрібно: " .. nameUA(req) end
+  -- Combat feedback lines on UIErrorsFrame
+  local combatErr = {
+    ["You dodge"] = "Ви ухилились",
+    ["You parry"] = "Ви парирували",
+    ["You block"] = "Ви заблокували",
+    ["You resist"] = "Ви чините опір",
+    ["You absorb"] = "Ви поглинаєте",
+    ["You evade"] = "Ви уникаєте",
+    ["Enemy dodges"] = "Ворог ухиляється",
+    ["Enemy parries"] = "Ворог парирує",
+    ["Enemy blocks"] = "Ворог блокує",
+    ["Enemy resists"] = "Ворог чинить опір",
+    ["Enemy absorbs"] = "Ворог поглинає",
+    ["Enemy evades"] = "Ворог уникає",
+    ["Missed"] = "Промах",
+    ["Interrupted"] = "Перервано",
+    ["Target is immune"] = "Ціль має імунітет",
+    ["Immune"] = "Імунітет",
+    ["Dodged"] = "Ухилення",
+    ["Parried"] = "Парирування",
+    ["Blocked"] = "Блок",
+    ["Absorbed"] = "Поглинуто",
+    ["Resisted"] = "Опір",
+    ["Evaded"] = "Уникнення",
+    ["Deflected"] = "Відхилено",
+    ["Reflected"] = "Відбито",
+    ["Can't attack while dead."] = "Не можна атакувати, будучи мертвим.",
+    ["You can't do that yet."] = "Ви ще не можете цього зробити.",
+    ["You are too far away."] = "Занадто далеко.",
+    ["Out of range."] = "Поза зоною досяжності.",
+    ["Target needs to be in front of you."] = "Ціль має бути перед вами.",
+    ["You are facing the wrong way!"] = "Ви дивитесь не в той бік!",
+    ["You must be behind your target."] = "Потрібно бути позаду цілі.",
+    ["Not enough mana."] = "Недостатньо мани.",
+    ["Not enough energy."] = "Недостатньо енергії.",
+    ["Not enough rage."] = "Недостатньо люті.",
+    ["Not enough health."] = "Недостатньо здоров'я.",
+    ["Item is not ready yet."] = "Предмет ще не готовий.",
+    ["Ability is not ready yet."] = "Здібність ще не готова.",
+    ["Spell is not ready yet."] = "Заклинання ще не готове.",
+    ["Another action is in progress"] = "Виконується інша дія",
+    ["Can't do that while moving"] = "Неможливо під час руху",
+    ["You are dead"] = "Ви мертві",
+    ["You are stunned"] = "Вас оглушено",
+    ["You are silenced"] = "Вас знемовлено",
+    ["You are pacified"] = "Вас заспокоено",
+    ["Target is dead"] = "Ціль мертва",
+    ["Invalid target"] = "Недійсна ціль",
+    ["You have no target."] = "Немає цілі.",
+    ["Line of sight"] = "Немає прямої видимості",
+  }
+  if combatErr[msg] then return combatErr[msg] end
+  -- часткові збіги
+  local low = string.lower(msg)
+  if string.find(low, "dodge") then return string.gsub(msg, "[Dd]odge[sd]?", "ухилення") end
+  if string.find(low, "parry") then return string.gsub(msg, "[Pp]arr[yi]e?d?", "парирування") end
+  if string.find(low, "block") then return string.gsub(msg, "[Bb]locke?d?", "блок") end
+  if string.find(low, "resist") then return string.gsub(msg, "[Rr]esiste?d?", "опір") end
+  if string.find(low, "miss") then return string.gsub(msg, "[Mm]isse?d?", "промах") end
+  if string.find(low, "immune") then return string.gsub(msg, "[Ii]mmune", "імунітет") end
+  if string.find(low, "interrupt") then return string.gsub(msg, "[Ii]nterrupted?", "перервано") end
+  if string.find(low, "absorb") then return string.gsub(msg, "[Aa]bsorbe?d?", "поглинання") end
+  if string.find(low, "critical") then return string.gsub(msg, "[Cc]ritical", "крит") end
+  -- голі слова з екрану/скілів
+  local single = {
+    ["DODGE"]="УХИЛЕННЯ",["PARRY"]="ПАРИРУВАННЯ",["BLOCK"]="БЛОК",["MISS"]="ПРОМАХ",
+    ["ABSORB"]="ПОГЛИНАННЯ",["RESIST"]="ОПІР",["IMMUNE"]="ІМУНІТЕТ",["EVADE"]="УНИКНЕННЯ",
+    ["INTERRUPT"]="ПЕРЕРИВАННЯ",["INTERRUPTED"]="ПЕРЕРВАНО",["CRIT"]="КРИТ",["CRITICAL"]="КРИТ",
+    ["CRUSHING"]="ЗНИЩУВАЛЬНИЙ",["GLANCING"]="КОВЗНИЙ",["REFLECT"]="ВІДБИТТЯ",["DEFLECT"]="ВІДХИЛЕННЯ",
+  }
+  if single[msg] then return single[msg] end
+  if single[string.upper(msg)] then return single[string.upper(msg)] end
+  -- Generic: try whole message as known name
+  local whole = nameUA(msg)
+  if whole ~= msg then return whole end
   return msg
 end
 
@@ -3864,8 +4077,14 @@ local function HookUIErrors()
   local oldAdd = UIErrorsFrame.AddMessage
   if oldAdd then
     UIErrorsFrame.AddMessage = function(self, msg, r, g, b, a)
-      if SkillEnabled() and type(msg) == "string" then
-        msg = TranslateErrorMessage(msg)
+      if type(msg) == "string" then
+        local allow = true
+        if OceUA_IsEnabled then
+          allow = OceUA_IsEnabled("skill") or OceUA_IsEnabled("quest") or OceUA_IsEnabled("world") or OceUA_IsEnabled("item")
+        end
+        if allow then
+          msg = TranslateErrorMessage(msg)
+        end
       end
       return oldAdd(self, msg, r, g, b, a)
     end
