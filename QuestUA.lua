@@ -1368,13 +1368,13 @@ local function FindTranslationForLogRow(logIndex, title)
     local list = byTitleList[t] or byTitleLowerList[string.lower(t)]
     if not list then return nil end
     if table.getn(list) == 1 then return list[1] end
-    -- кілька одноіменних: повний розбір лише для ВИБРАНОГО рядка
-    local sel = GetQuestLogSelection and GetQuestLogSelection() or 0
-    if sel == logIndex then
-        return FindTranslation(title)
+    -- кілька одноіменних: спробувати PickFromList / перший збіг у журналі
+    if PickFromList then
+        local tr = PickFromList(list, qid)
+        if tr then return tr end
     end
-    -- інакше не чіпаємо (лишаємо EN), щоб при hover не стрибали назви
-    return nil
+    -- fallback: не лишати EN «дірявим» у трекері
+    return list[1]
 end
 
 local function TranslateQuestLogList()
@@ -2733,19 +2733,25 @@ for li = 1, TRK_MAX do
         BorderFadeTo(1)
         local e = this.entry
         if not e then return end
-        -- рамка: окремий Frame + WHITE8X8 (завжди видно, під текстом)
+        -- видима рамка-підсвітка (Backdrop — надійно в 1.12)
         if not this.hoverFrame then
             this.hoverFrame = CreateFrame("Frame", nil, this)
-            this.hoverFrame:SetFrameLevel(0)
-            this.hoverBg = this.hoverFrame:CreateTexture(nil, "BACKGROUND")
-            this.hoverBg:SetAllPoints(this.hoverFrame)
-            this.hoverBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+            this.hoverFrame:EnableMouse(false)
+            this.hoverFrame:SetBackdrop({
+                bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                tile = true, tileSize = 8, edgeSize = 10,
+                insets = { left = 2, right = 2, top = 2, bottom = 2 },
+            })
         end
         this.hoverFrame:ClearAllPoints()
-        this.hoverFrame:SetPoint("TOPLEFT", this, "TOPLEFT", -4, 4)
-        this.hoverFrame:SetPoint("BOTTOMRIGHT", this, "BOTTOMRIGHT", 4, -4)
-        this.hoverBg:SetVertexColor(0.10, 0.08, 0.14)
-        this.hoverBg:SetAlpha(0.20)
+        this.hoverFrame:SetPoint("TOPLEFT", this, "TOPLEFT", -3, 3)
+        this.hoverFrame:SetPoint("BOTTOMRIGHT", this, "BOTTOMRIGHT", 3, -3)
+        -- світліше ~вдвічі
+        this.hoverFrame:SetBackdropColor(0.14, 0.12, 0.18, 0.28)
+        this.hoverFrame:SetBackdropBorderColor(0.65, 0.55, 0.80, 0.40)
+        local fl = this:GetFrameLevel() or 1
+        this.hoverFrame:SetFrameLevel(fl)
         this.hoverFrame:Show()
         if this.fs then this.fs:SetDrawLayer("OVERLAY") end
         GameTooltip:SetOwner(this, "ANCHOR_LEFT")
@@ -2776,22 +2782,10 @@ for li = 1, TRK_MAX do
         GameTooltip:Show()
     end)
     hit:SetScript("OnLeave", function()
-        local e = this.entry
-        local keep = false
-        if e and MouseIsOver then
-            local i
-            for i = 1, TRK_MAX do
-                local h = trk.lines[i]
-                if h and h:IsVisible() and h.entry == e and MouseIsOver(h) then
-                    keep = true
-                    break
-                end
-            end
-        end
-        if not keep then
-            GameTooltip:Hide()
-            if this.hoverFrame then this.hoverFrame:Hide() elseif this.hoverBg then this.hoverBg:Hide() end
-        end
+        -- завжди ховати підсвітку цього рядка (без «прилипання»)
+        if this.hoverFrame then this.hoverFrame:Hide() end
+        if this.hoverBg then this.hoverBg:Hide() end
+        GameTooltip:Hide()
         if not (MouseIsOver and MouseIsOver(trk)) then BorderFadeTo(0) end
     end)
     hit:SetScript("OnMouseUp", function()
@@ -3587,7 +3581,8 @@ function OceUA_RefreshQuestTracker()
         if lines[j].selBar then lines[j].selBar:Hide() end
         if lines[j].readyIcon then lines[j].readyIcon:Hide() end
         if lines[j].divBg then lines[j].divBg:Hide() end
-        if lines[j].hoverFrame then lines[j].hoverFrame:Hide() elseif lines[j].hoverBg then lines[j].hoverBg:Hide() end
+        if lines[j].hoverFrame then lines[j].hoverFrame:Hide() end
+        if lines[j].hoverBg then lines[j].hoverBg:Hide() end
     end
 
     -- TranslatePfQuestFrames винесено з трекера (тяжкий обхід дерев фреймів)

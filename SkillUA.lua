@@ -1,5 +1,5 @@
 --[[
-  OceUA / Skill module v2.0.0
+  OceUA / Skill module v3.0.0
   Переклад скілів / бафів / тренера / професій
   OctoWoW / TurtleWoW (1.12)
 
@@ -25,7 +25,7 @@
 ]]
 
 local ADDON_NAME = "OceUA"
-local VERSION = "2.0.0"
+local VERSION = "3.0.0"
 
 -- налаштування скілів
 -- з 1.2.0 основне джерело — OceUA_Settings (/oceua);
@@ -980,6 +980,30 @@ local function TranslateText(text)
     end
   end
 
+  -- прямий ключ у Skill_Dictionary (без soft) — довгі описи 1:1
+  if OceSkillUA_Dictionary and OceSkillUA_Dictionary[clean] then
+    local dua = OceSkillUA_Dictionary[clean]
+    if dua and dua ~= "" and dua ~= clean then
+      local result = FinalizeUA(dua, clean)
+      if cacheCount < CACHE_MAX then
+        translateCache[clean] = { result, true }
+        cacheCount = cacheCount + 1
+      end
+      return result, true
+    end
+  end
+  if OceUA_Skill_Dictionary and OceUA_Skill_Dictionary[clean] then
+    local dua = OceUA_Skill_Dictionary[clean]
+    if dua and dua ~= "" and dua ~= clean then
+      local result = FinalizeUA(dua, clean)
+      if cacheCount < CACHE_MAX then
+        translateCache[clean] = { result, true }
+        cacheCount = cacheCount + 1
+      end
+      return result, true
+    end
+  end
+
   -- пріоритет: challenges.lua (назви випробувань)
   if OceUA_challenges and OceUA_challenges[clean] then
     local cua = OceUA_challenges[clean]
@@ -998,7 +1022,16 @@ local function TranslateText(text)
     local ek = SoftExactKey(clean)
     local exactHit = exactUA[ek]
     if not exactHit then
+      -- варіанти крапки / пробілів
+      exactHit = exactUA[ek .. "."] or exactUA[string.gsub(ek, "%.$", "")]
+    end
+    if not exactHit then
       exactHit = LookupCategoryExact(ek, clean)
+    end
+    if not exactHit then
+      -- оригінальний clean без lower (деякі ключі в словнику з іншим регістром уже в SoftExactKey)
+      local ek2 = SoftExactKey(string.gsub(clean, "%s+$", ""))
+      exactHit = exactUA[ek2]
     end
     if exactHit then
       local result = FinalizeUA(exactHit, clean)
@@ -1903,15 +1936,29 @@ local function ProcessTooltip(tooltip)
     return
   end
   if tooltip.oceDone then return end
-  -- уже UA на 1-му рядку: для бафів все одно добити інші рядки 1 раз
+  -- Назва (рядок 1) може вже бути UA, а описи нижче — ще EN.
+  -- Тому НЕ виходимо лише через HasCyrillic на 1-му рядку:
+  -- проходимо всі рядки; HasCyrillic на кожному рядку сам пропустить готове.
   if not TooltipNeedsUA(tooltip) then
-    if tooltip.oceNoDual and not tooltip.oceBuffLinesDone then
-      tooltip.oceBuffLinesDone = true
-      -- не return — пройдемо рядки нижче (HasCyrillic пропустить UA)
-    else
+    -- перевірити, чи лишились EN-рядки
+    local hasEN = false
+    local tn = tooltip:GetName() or ""
+    local li
+    for li = 1, (tooltip.NumLines and tooltip:NumLines()) or 20 do
+      local fs = getglobal(tn .. "TextLeft" .. li)
+      if fs and fs.GetText then
+        local tx = fs:GetText() or ""
+        if tx ~= "" and not HasCyrillic(tx) and string.find(tx, "[A-Za-z]") then
+          hasEN = true
+          break
+        end
+      end
+    end
+    if not hasEN then
       tooltip.oceDone = true
       return
     end
+    -- є EN-описи → не ставимо oceDone, обробляємо нижче
   end
   -- юніт-тултіп (NPC/моб): Level N у рядку 2/3 — хай UnitUA, не SkillUA
   if not tooltip.oceItemTip and not tooltip.oceNoDual then
@@ -1936,7 +1983,7 @@ local function ProcessTooltip(tooltip)
     return
   end
   tooltip.oceLastProc = now
-  tooltip.oceDone = true
+  -- oceDone ставимо ПІСЛЯ проходу рядків (описи інколи довантажуються)
 
   hasAnyTranslation = false
   local num = tooltip:NumLines() or 0
@@ -1990,6 +2037,31 @@ local function ProcessTooltip(tooltip)
           end
         end
       end
+    end
+  end
+
+  -- якщо ще є EN-рядки — дозволити ще один прохід OnUpdate
+  do
+    local stillEN = false
+    local tn = tooltip:GetName() or ""
+    local li
+    for li = 1, num do
+      local fs = getglobal(tn .. "TextLeft" .. li)
+      if fs and fs.GetText then
+        local tx = fs:GetText() or ""
+        if tx ~= "" and not HasCyrillic(tx) and string.find(tx, "[A-Za-z]") then
+          -- пропустити голі числа / DPS
+          if not string.find(tx, "^[%d%s%-%./+:]+$") then
+            stillEN = true
+            break
+          end
+        end
+      end
+    end
+    if not stillEN then
+      tooltip.oceDone = true
+    else
+      tooltip.oceDone = nil  -- ще раз
     end
   end
 
@@ -2339,10 +2411,33 @@ end
 -- ============================================================
 -- Spellbook (книга заклинань гравця)
 -- ============================================================
+local function LookupSpellBookName(base)
+  if not base or base == "" then return nil end
+  local function hit(d)
+    if d and d[base] and d[base] ~= "" and d[base] ~= base then return d[base] end
+    return nil
+  end
+  local ua = hit(OceUA_Skill_Dictionary)
+  if ua then return ua end
+  ua = hit(OceSkillUA_Dictionary)
+  if ua then return ua end
+  ua = hit(OceUA_challenges)
+  if ua then return ua end
+  ua = hit(OceUA_Talent_Names)
+  if ua then return ua end
+  ua = hit(OceUA_Class_Names)
+  if ua then return ua end
+  -- soft from main TranslateText pipeline
+  if TranslateText then
+    local t2, ok = TranslateText(base)
+    if ok and t2 and t2 ~= base then return t2 end
+  end
+  return nil
+end
+
 local function TranslateSpellBookButton(i)
   local btn = getglobal("SpellButton" .. i)
   if not btn or not btn:IsVisible() then return end
-  -- 1.12: назва часто в SpellButtonNSpellName або SubText / FontString дітей
   local candidates = {
     getglobal("SpellButton" .. i .. "SpellName"),
     getglobal("SpellButton" .. i .. "Title"),
@@ -2350,23 +2445,41 @@ local function TranslateSpellBookButton(i)
   }
   local ci
   for ci = 1, table.getn(candidates) do
-    if candidates[ci] then TranslateFontString(candidates[ci]) end
+    local fs = candidates[ci]
+    if fs and fs.GetText then
+      local tx = fs:GetText()
+      if tx and tx ~= "" and not HasCyrillic(tx) then
+        local base = string.gsub(tx, "%s*%(.*%)%s*$", "")
+        base = string.gsub(base, "%s+$", "")
+        local ua = LookupSpellBookName(base)
+        if ua then
+          local _, _, rank = string.find(tx, "(%(.*%))%s*$")
+          if rank then
+            rank = string.gsub(rank, "[Rr]ank%s*", "Ранг ")
+            fs:SetText(ua .. " " .. rank)
+          else
+            fs:SetText(ua)
+          end
+        else
+          TranslateFontString(fs)
+        end
+      end
+    end
   end
   local sub = getglobal("SpellButton" .. i .. "SubText")
   if sub then
     local st = sub:GetText()
     if st and st ~= "" and not HasCyrillic(st) then
-      -- Rank 1 → Ранг 1
       local nst = string.gsub(st, "^[Rr]ank%s*(%d+)", "Ранг %1")
       nst = string.gsub(nst, "^Passive", "Пасивно")
       if nst ~= st then
         sub:SetText(nst)
       else
-        TranslateFontString(sub)
+        local ua = LookupSpellBookName(st)
+        if ua then sub:SetText(ua) else TranslateFontString(sub) end
       end
     end
   end
-  -- обхід FontString на кнопці
   if btn.GetRegions then
     local regs = { btn:GetRegions() }
     local ri
@@ -2375,11 +2488,10 @@ local function TranslateSpellBookButton(i)
       if r and r.GetObjectType and r:GetObjectType() == "FontString" then
         local tx = r:GetText()
         if tx and tx ~= "" and not HasCyrillic(tx) then
-          -- не чіпати макроси/номери
           if not string.find(tx, "^%d+$") then
             local base = string.gsub(tx, "%s*%(.*%)%s*$", "")
             base = string.gsub(base, "%s+$", "")
-            local ua = OceUA_Skill_Dictionary and OceUA_Skill_Dictionary[base]
+            local ua = LookupSpellBookName(base)
             if ua then
               local _, _, rank = string.find(tx, "(%(.*%))%s*$")
               if rank then
@@ -2443,7 +2555,7 @@ spellBookWatch:SetScript("OnUpdate", function()
     return
   end
   this.acc = this.acc + arg1
-  if this.acc < 0.15 then return end
+  if this.acc < 0.08 then return end
   this.acc = 0
   ProcessSpellBook()
 end)

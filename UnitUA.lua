@@ -46,6 +46,8 @@ local function LookupName(en)
   -- вивіски / таблички (не зони з zones)
   ua = hit(OceUA_Signs_Dictionary); if ua then return ua end
   ua = hit(OceUA_Unsorted_Dictionary); if ua then return ua end
+  -- випробування (Active Challenges / War Mode …)
+  ua = hit(OceUA_challenges); if ua then return ua end
   -- професії / титули тренерів (база professions.lua + Profession_Names)
   ua = hit(OceUA_profession_ranks); if ua then return ua end
   ua = hit(OceUA_Profession_Names); if ua then return ua end
@@ -106,6 +108,8 @@ local FIXED = {
   ["PvP"] = "PvP",
   ["Player"] = "Гравець",
   ["(Player)"] = "(Гравець)",
+  ["Active Challenges:"] = "Активні випробування:",
+  ["Active Challenges"] = "Активні випробування",
   ["Pet"] = "Улюбленець",
   ["Minion"] = "Прислужник",
   ["Guardian"] = "Охоронець",
@@ -303,7 +307,13 @@ local function TranslateLevelish(text)
   -- color-коди ламають перевірку "Level " → спочатку зняти
   text = StripCodes(text)
   text = NormApos(text)
-  if string.find(text, "[А-Яа-яІіЇїЄєҐґ]") or string.find(text, "[89]") then return nil end
+  -- якщо вже повністю UA (є "Рівень") — не чіпати
+  if string.find(text, "Рівень") then return nil end
+  -- інші рядки з кирилицею (не Level) — не чіпати
+  local isLevelLine = string.find(string.lower(text), "^%s*level%s")
+  if not isLevelLine then
+    if string.find(text, "[А-Яа-яІіЇїЄєҐґ]") or string.find(text, "[89]") then return nil end
+  end
 
   if FIXED[text] then return FIXED[text] end
 
@@ -312,6 +322,13 @@ local function TranslateLevelish(text)
 
   local t = text
   t = string.gsub(t, "%(Player%)", "(Гравець)")
+
+  t = string.gsub(t, "^%s+", "")
+  if string.sub(string.lower(t), 1, 8) == "level ??" then
+    t = "Level ??" .. string.sub(t, 9)
+  elseif string.sub(string.lower(t), 1, 6) == "level " then
+    t = "Level " .. string.sub(t, 7)
+  end
 
   -- Level ?? …
   if string.sub(t, 1, 8) == "Level ??" then
@@ -392,39 +409,66 @@ local function TranslateTipLines(tip)
   if not tip or not tip.GetName then return end
   local tipName = tip:GetName()
   if not tipName then return end
-  -- якщо це тултіп pfQuest ([!]/[?]) — лише OceTip
-  local fs1 = getglobal(tipName .. "TextLeft1")
-  if fs1 then
-    local t1 = fs1:GetText() or ""
-    if string.find(t1, "%[!%]") or string.find(t1, "%[%?%]") then return end
-  end
 
   local i
-  for i = 1, 12 do
+  for i = 1, 30 do
     local fs = getglobal(tipName .. "TextLeft" .. i)
     if fs then
       local text = fs:GetText()
       if text and text ~= "" then
-        -- квестові рядки pfQuest — тільки OceTip (без другого проходу = без блимання)
-        if string.find(text, "%[!%]") or string.find(text, "%[%?%]") then
-          -- skip
-        elseif string.find(text, "%[%d+%.?%d*%%%]") then
-          -- прибрати [37%] якщо раптом лишилось
-          local cleaned = string.gsub(text, "%s*%[%s*%d+%.?%d*%s*%%%s*%]", "")
-          if cleaned ~= text then fs:SetText(cleaned); tip._OceUA_NeedResize = true end
-        elseif string.find(text, "[А-Яа-яІіЇїЄєҐґ]") or string.find(text, "[89]") then
-          -- вже UA
-        else
-          local pet = TranslatePetOwnerLine(text)
-          local ua = pet or TranslateLevelish(text)
-          if not ua then
-            ua = FIXED[text] or LookupName(text)
-          end
-          if ua and ua ~= text then
-            fs:SetText(ua)
-            tip._OceUA_NeedResize = true
-          end
+        local stripped = StripCodes(text)
+        stripped = NormApos(stripped)
+        -- 1) pet
+        local ua = TranslatePetOwnerLine(stripped)
+        -- 2) Level / раса / клас
+        if not ua then ua = TranslateLevelish(stripped) end
+        -- 3) FIXED (Player, Active Challenges:, тощо)
+        if not ua then ua = FIXED[stripped] end
+        -- 4) challenges + імена
+        if not ua then ua = LookupName(stripped) end
+        -- 5) challenges exact (на випадок іншого регістру)
+        if not ua and OceUA_challenges then
+          ua = OceUA_challenges[stripped] or OceUA_challenges[text]
         end
+        if ua and ua ~= text and ua ~= stripped then
+          fs:SetText(ua)
+          tip._OceUA_NeedResize = true
+        end
+      end
+    end
+  end
+end
+
+local function StylePlayerTipColors(tip)
+  if not tip or not tip.GetName then return end
+  local tipName = tip:GetName()
+  if not tipName then return end
+  local isPlayer = false
+  local i
+  for i = 1, 10 do
+    local fs = getglobal(tipName .. "TextLeft" .. i)
+    if fs then
+      local t = fs:GetText() or ""
+      if string.find(t, "%(Гравець%)") or string.find(t, "%(Player%)")
+          or t == "Гравець" or t == "Player"
+          or string.find(t, "Рівень .*Гравець") or string.find(t, "Level .*Player") then
+        isPlayer = true
+      end
+    end
+  end
+  if not isPlayer then return end
+  -- нік завжди білий
+  local fs1 = getglobal(tipName .. "TextLeft1")
+  if fs1 and fs1.SetTextColor then
+    fs1:SetTextColor(1, 1, 1)
+  end
+  -- PvP — помаранчевий
+  for i = 1, 10 do
+    local fs = getglobal(tipName .. "TextLeft" .. i)
+    if fs then
+      local t = fs:GetText() or ""
+      if t == "PvP" or t == "PVP" then
+        fs:SetTextColor(1.0, 0.55, 0.15)
       end
     end
   end
@@ -434,13 +478,19 @@ local function TranslateTip(tip)
   if not tip then return end
   TranslateTipName(tip)
   TranslateTipLines(tip)
-  -- після довших рядків (UA + EN) — один Show, щоб рамка підлаштувалась
+  if StylePlayerTipColors then StylePlayerTipColors(tip) end
+  -- розтяг рамки під довший UA-текст
   if tip._OceUA_NeedResize then
     tip._OceUA_NeedResize = nil
     if tip.Show and not tip._OceUA_InShow then
       tip._OceUA_InShow = true
       pcall(function() tip:Show() end)
       tip._OceUA_InShow = nil
+      -- Show інколи скидає рядки на EN → одразу ще раз перекласти
+      TranslateTipName(tip)
+      TranslateTipLines(tip)
+      if StylePlayerTipColors then StylePlayerTipColors(tip) end
+      tip._OceUA_PetPass = 0
     end
   end
 end
@@ -479,35 +529,45 @@ local function HookOnShow(tip)
     if oldUp then oldUp() end
     if not this:IsVisible() then return end
     if this._OceUA_Translating then return end
-    local pass = this._OceUA_PetPass or 0
-    if pass >= 5 then return end
-    this._OceUA_PetPass = pass + 1
     local isItem = false
     if this.GetItem then
       local ok, name = pcall(function() return this:GetItem() end)
       if ok and name then isItem = true end
     end
     if isItem then return end
-    -- ще раз лише якщо Level досі англійською (текст інколи з’являється пізніше)
+
+    -- поки є англ. Level / Active Challenges / challenge-імена — перекладаємо щокадру
     local stillEN = false
     local tn = this:GetName()
     if tn then
       local i
-      for i = 1, 4 do
+      for i = 1, 12 do
         local fs = getglobal(tn .. "TextLeft" .. i)
         local tx = fs and fs:GetText() or ""
         tx = string.gsub(tx, "|c%x%x%x%x%x%x%x%x", "")
         tx = string.gsub(tx, "|r", "")
         if string.sub(tx, 1, 6) == "Level " or string.sub(tx, 1, 8) == "Level ??" then
           stillEN = true
-          break
+        end
+        if tx == "Active Challenges:" or tx == "Active Challenges" then
+          stillEN = true
+        end
+        if OceUA_challenges and OceUA_challenges[tx] then
+          -- ключ ще EN (значення UA) → треба підмінити
+          if OceUA_challenges[tx] ~= tx then stillEN = true end
         end
       end
     end
-    if pass > 0 and not stillEN then
-      this._OceUA_PetPass = 99
-      return
+
+    local pass = this._OceUA_PetPass or 0
+    -- якщо все вже UA — кілька кадрів «дотиску» і стоп
+    if not stillEN then
+      if pass >= 8 then return end
+    else
+      -- EN ще є — крутимо довше
+      if pass >= 40 then return end
     end
+    this._OceUA_PetPass = pass + 1
     this._OceUA_Translating = true
     pcall(TranslateTip, this)
     this._OceUA_Translating = nil
@@ -869,21 +929,32 @@ end)
 
 
 
+
+
+
+
+
+
 -- ============================================================
--- Combat feedback: ВЛАСНИЙ анімований текст (не клієнтський)
--- База: Data/Combat_Feedback.lua → OceUA_Combat_Feedback
+-- Combat feedback:
+--   оригінал EN лишається (клієнт)
+--   UA з OceUA_Combat_Feedback — напівпрозорий, над action bars, знизу вгору
+--   усі ключі з файлу; нові рядки — лише /reload
 -- ============================================================
 
 local function CombatLookup(text)
   if not text or text == "" then return nil end
+  if string.find(text, "^[%d%s%+%-%.]+$") then return nil end
   local db = OceUA_Combat_Feedback
-  if not db then return nil end
+  if type(db) ~= "table" then return nil end
   if db[text] then return db[text] end
   local up = string.upper(text)
   if db[up] then return db[up] end
+  local low = string.lower(text)
+  if db[low] then return db[low] end
   local _, _, head, rest = string.find(text, "^([%a]+)%s*(.*)$")
   if head then
-    local ua = db[head] or db[string.upper(head)]
+    local ua = db[head] or db[string.upper(head)] or db[string.lower(head)]
     if ua then
       rest = string.gsub(rest or "", "^%s+", "")
       if rest ~= "" then return ua .. " " .. rest end
@@ -893,10 +964,25 @@ local function CombatLookup(text)
   return nil
 end
 
--- пул рухомих написів
-local OCE_FB_MAX = 8
+local function CombatColor(key)
+  local k = string.upper(tostring(key or ""))
+  if k == "HEAL" or k == "ENERGIZE" then return 0.3, 1, 0.3 end
+  if k == "MISS" or k == "DODGE" or k == "PARRY" or k == "BLOCK" or k == "EVADE" then
+    return 1, 1, 1
+  end
+  if k == "IMMUNE" or k == "RESIST" or k == "ABSORB" or k == "DEFLECT" or k == "REFLECT" then
+    return 0.75, 0.75, 1
+  end
+  if k == "INTERRUPT" or k == "INTERRUPTED" then return 1, 0.55, 0.2 end
+  if k == "CRITICAL" or k == "CRIT" or k == "CRUSHING" then return 1, 1, 0.35 end
+  return 1, 0.9, 0.35
+end
+
+local OCE_FB_BASE = 130
+local OCE_FB_MAX = 10
 local oceFbPool = {}
 local oceFbIdx = 0
+local OCE_FB_SLOT = 0
 
 local function OceFbAcquire()
   local i
@@ -909,25 +995,32 @@ local function OceFbAcquire()
   local f = oceFbPool[oceFbIdx]
   if not f then
     f = CreateFrame("Frame", "OceUA_CombatFB" .. oceFbIdx, UIParent)
-    f:SetWidth(200)
-    f:SetHeight(24)
+    f:SetWidth(400)
+    f:SetHeight(40)
     f:SetFrameStrata("HIGH")
-    f.fs = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    f:SetFrameLevel(50)
+    f.fs = f:CreateFontString(nil, "OVERLAY")
     f.fs:SetPoint("CENTER", f, "CENTER")
     f.fs:SetJustifyH("CENTER")
+    local font = GameFontNormalLarge:GetFont()
+    if font then f.fs:SetFont(font, 16, "") end
+    if f.fs.SetTextHeight then f.fs:SetTextHeight(22) end
+    f.fs:SetShadowColor(0, 0, 0, 0.4)
+    f.fs:SetShadowOffset(1, -1)
     f:SetScript("OnUpdate", function()
       if not this.active then return end
       local dt = arg1 or 0
       this.t = (this.t or 0) + dt
-      local y = (this.baseY or 0) + this.t * 40
-      this:SetPoint("CENTER", UIParent, "CENTER", this.baseX or 0, y)
-      local a = 1
-      if this.t > 0.9 then
-        a = 1 - (this.t - 0.9) / 0.5
+      local y = (this.baseY or OCE_FB_BASE) + this.t * 36
+      this:ClearAllPoints()
+      this:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, y)
+      local a = 0.72
+      if this.t > 1.0 then
+        a = 0.72 * (1 - (this.t - 1.0) / 0.6)
         if a < 0 then a = 0 end
       end
       this:SetAlpha(a)
-      if this.t >= 1.4 then
+      if this.t >= 1.6 then
         this.active = false
         this:Hide()
       end
@@ -937,138 +1030,95 @@ local function OceFbAcquire()
   return f
 end
 
-local function OceFbShow(text, r, g, b, anchorFrame)
+local function OceFbShow(text, r, g, b)
   if not text or text == "" then return end
   local f = OceFbAcquire()
   if not f then return end
   f.active = true
   f.t = 0
   f.fs:SetText(text)
-  f.fs:SetTextColor(r or 1, g or 0.82, b or 0)
-  -- позиція біля unit frame або центр
-  local ax, ay = 0, 80
-  if anchorFrame and anchorFrame.GetCenter then
-    local ok, x, y = pcall(function() return anchorFrame:GetCenter() end)
-    if ok and x and y then
-      local ux, uy = UIParent:GetCenter()
-      ax = x - (ux or 0)
-      ay = y - (uy or 0) + 20
-    end
-  end
-  f.baseX = ax
-  f.baseY = ay
+  f.fs:SetTextColor(r or 1, g or 0.9, b or 0.35)
+  local font = GameFontNormalLarge:GetFont()
+  if font then f.fs:SetFont(font, 16, "") end
+  if f.fs.SetTextHeight then f.fs:SetTextHeight(22) end
+  f.fs:SetShadowColor(0, 0, 0, 0.4)
+  f.fs:SetShadowOffset(1, -1)
+  OCE_FB_SLOT = OCE_FB_SLOT + 1
+  if OCE_FB_SLOT > 6 then OCE_FB_SLOT = 1 end
+  f.baseY = OCE_FB_BASE + (OCE_FB_SLOT - 1) * 8
   f:ClearAllPoints()
-  f:SetPoint("CENTER", UIParent, "CENTER", ax, ay)
-  f:SetAlpha(1)
+  f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, f.baseY)
+  f:SetAlpha(0.72)
   f:Show()
 end
 
-local function HideBlizzardFeedback(frame)
-  if not frame then return end
-  if frame.feedbackText then
-    frame.feedbackText:SetText("")
-    if frame.feedbackText.SetAlpha then frame.feedbackText:SetAlpha(0) end
-  end
-end
-
-local function HideHitIndicators()
-  local names = { "PlayerHitIndicator", "PetHitIndicator", "TargetHitIndicator" }
-  local i
-  for i = 1, 3 do
-    local fs = getglobal(names[i])
-    if fs then
-      if fs.SetText then fs:SetText("") end
-      if fs.SetAlpha then fs:SetAlpha(0) end
-    end
-  end
-end
-
--- колір за типом події
-local function CombatColor(ev)
-  ev = string.upper(tostring(ev or ""))
-  if ev == "HEAL" or ev == "ENERGIZE" then return 0.1, 1, 0.1 end
-  if ev == "MISS" or ev == "DODGE" or ev == "PARRY" or ev == "BLOCK" or ev == "EVADE" then
-    return 1, 1, 1
-  end
-  if ev == "IMMUNE" or ev == "RESIST" or ev == "ABSORB" or ev == "DEFLECT" or ev == "REFLECT" then
-    return 0.7, 0.7, 1
-  end
-  if ev == "INTERRUPT" then return 1, 0.5, 0 end
-  return 1, 0.2, 0.2
-end
-
 local function EventToUA(event, flags, amount)
-  local db = OceUA_Combat_Feedback
   local parts = {}
   local function add(en)
-    if not en or en == "" then return end
-    local ua = CombatLookup(en) or (db and (db[en] or db[string.upper(en)])) or en
-    parts[table.getn(parts) + 1] = ua
+    if not en or en == "" or en == "nil" then return end
+    local ua = CombatLookup(tostring(en))
+    if ua then parts[table.getn(parts) + 1] = ua end
   end
   event = tostring(event or "")
   flags = tostring(flags or "")
-  -- слово події (MISS/DODGE/…)
   if event ~= "" and event ~= "WOUND" and event ~= "HEAL" and event ~= "ENERGIZE" then
     add(event)
   end
-  -- CRITICAL / CRUSHING / GLANCING / ABSORB на WOUND
   if flags ~= "" and flags ~= "nil" then
     add(flags)
-  end
-  -- число шкоди (якщо є) — лишаємо як є
-  local num = tonumber(amount)
-  if num and num > 0 then
-    parts[table.getn(parts) + 1] = tostring(num)
-  end
-  if table.getn(parts) == 0 then
-    if event ~= "" then add(event) end
   end
   if table.getn(parts) == 0 then return nil end
   local out = parts[1]
   local i
-  for i = 2, table.getn(parts) do
-    out = out .. " " .. parts[i]
-  end
+  for i = 2, table.getn(parts) do out = out .. " " .. parts[i] end
   return out
 end
 
-local function ShowFromCombatEvent(event, flags, amount, unit)
+local function ShowCombatUA(event, flags, amount)
   local text = EventToUA(event, flags, amount)
   if not text then return end
-  -- якщо вийшов лише чистий EN без перекладу і це не число — все одно показати (з бази або EN)
   local r, g, b = CombatColor(event)
   if flags and string.upper(tostring(flags)) == "CRITICAL" then
-    r, g, b = 1, 1, 0.2
+    r, g, b = 1, 1, 0.35
   end
-  local anchor = nil
-  unit = unit or "player"
-  if unit == "player" then anchor = getglobal("PlayerFrame")
-  elseif unit == "target" then anchor = getglobal("TargetFrame")
-  elseif unit == "pet" then anchor = getglobal("PetFrame")
-  end
-  OceFbShow(text, r, g, b, anchor)
-  HideBlizzardFeedback(anchor)
-  HideHitIndicators()
+  OceFbShow(text, r, g, b)
 end
 
 local function HookCombatFeedback()
+  -- НЕ глушимо і НЕ замінюємо оригінал EN
   if type(CombatFeedback_OnCombatEvent) == "function" and not OceUA_CombatFbHooked then
     OceUA_CombatFbHooked = true
     local old = CombatFeedback_OnCombatEvent
     CombatFeedback_OnCombatEvent = function(event, flags, amount, school)
-      -- сховаємо бліizzard-текст і покажемо свій
-      local unit = "player"
-      if this and this.GetName then
-        local n = this:GetName() or ""
-        if string.find(n, "Target") then unit = "target"
-        elseif string.find(n, "Pet") then unit = "pet"
+      if old then old(event, flags, amount, school) end
+      ShowCombatUA(event, flags, amount)
+    end
+  end
+  if type(CombatText_AddMessage) == "function" and not OceUA_CombatTextAddHooked then
+    OceUA_CombatTextAddHooked = true
+    local oldAdd = CombatText_AddMessage
+    CombatText_AddMessage = function(message, a2, a3, a4, a5, a6, a7)
+      local r = oldAdd(message, a2, a3, a4, a5, a6, a7)
+      if type(message) == "string" then
+        local ua = CombatLookup(message)
+        if ua then
+          local cr, cg, cb = CombatColor(message)
+          OceFbShow(ua, cr, cg, cb)
         end
       end
-      ShowFromCombatEvent(event, flags, amount, unit)
-      -- оригінал теж викличемо, але одразу зітремо текст
-      old(event, flags, amount, school)
-      if type(this) == "table" then HideBlizzardFeedback(this) end
-      HideHitIndicators()
+      return r
+    end
+  end
+  local ue = getglobal("UIErrorsFrame")
+  if ue and ue.AddMessage and not ue._OceUA_CombatErr then
+    ue._OceUA_CombatErr = true
+    local old = ue.AddMessage
+    ue.AddMessage = function(self, text, r, g, b, a)
+      if type(text) == "string" then
+        local ua = CombatLookup(text)
+        if ua then text = ua end
+      end
+      return old(self, text, r, g, b, a)
     end
   end
 end
@@ -1079,13 +1129,8 @@ combatEv:RegisterEvent("PLAYER_ENTERING_WORLD")
 combatEv:RegisterEvent("UNIT_COMBAT")
 combatEv:SetScript("OnEvent", function()
   if event == "UNIT_COMBAT" then
-    -- arg1=unit, arg2=action, arg3=descriptor, arg4=damage, arg5=damageSchool
-    local unit = arg1
-    local action = arg2
-    local desc = arg3
-    local dmg = arg4
-    if unit == "player" or unit == "target" or unit == "pet" then
-      ShowFromCombatEvent(action, desc, dmg, unit)
+    if arg1 == "player" or arg1 == "target" or arg1 == "pet" then
+      ShowCombatUA(arg2, arg3, arg4)
     end
   else
     HookCombatFeedback()

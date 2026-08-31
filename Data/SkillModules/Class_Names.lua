@@ -19,4 +19,7 @@ OceUA_Class_Names = {
   ["Shaman"] = "Шаман",
   ["Warlock"] = "Чорнокнижник",
   ["Warrior"] = "Воїн",
+
+  ["Death Knight"] = "Лицар смерті",
+  ["DeathKnight"] = "Лицар смерті",
 }

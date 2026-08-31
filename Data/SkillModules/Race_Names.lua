@@ -21,4 +21,7 @@ OceUA_Race_Names = {
   ["Troll"] = "Троль",
   ["Undead"] = "Нежить",
   ["Scourge"] = "Нежить",
+
+  ["Blood Elf"] = "Ельф крові",
+  ["Bloodelf"] = "Ельф крові",
 }

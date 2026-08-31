@@ -9,6 +9,13 @@
   Можна додавати будь-які рядки, які бачиш на екрані в бою
   або при натисканні скіла (Interrupted, Out of range, …).
 
+  УСІ ключі з цієї таблиці підміняються автоматично (UnitUA):
+  - floating combat (DODGE/MISS/…)
+  - UIErrorsFrame
+  - CombatText_AddMessage (якщо є)
+
+  Новий рядок → додай сюди → /reload → без правок коду.
+
   Після правок: /reload
 ]]
 
@@ -92,4 +99,5 @@ OceUA_Combat_Feedback = {
   ["Inventory is full."] = "Інвентар заповнений.",
   ["You cannot attack that target."] = "Ви не можете атакувати цю ціль.",
   ["You are too far away!"] = "Ти занадто далеко!",
+  ["You are mounted"] = "Ви перебуваєте в сідлі",
 }
