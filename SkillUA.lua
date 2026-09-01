@@ -1,5 +1,5 @@
 --[[
-  OceUA / Skill module v3.0.0
+  OceUA / Skill module v3.2.0
   Переклад скілів / бафів / тренера / професій
   OctoWoW / TurtleWoW (1.12)
 
@@ -25,7 +25,7 @@
 ]]
 
 local ADDON_NAME = "OceUA"
-local VERSION = "3.0.0"
+local VERSION = "3.2.0"
 
 -- налаштування скілів
 -- з 1.2.0 основне джерело — OceUA_Settings (/oceua);
@@ -4037,12 +4037,6 @@ end
 -- UIErrorsFrame: skill-up / learn messages (без миготіння — переклад у момент AddMessage)
 local function TranslateErrorMessage(msg)
   if not msg or msg == "" or HasCyrillic(msg) then return msg end
-  if OceUA_Combat_Feedback and OceUA_Combat_Feedback[msg] then
-    return OceUA_Combat_Feedback[msg]
-  end
-  if OceUA_Combat_Feedback and OceUA_Combat_Feedback[string.upper(msg)] then
-    return OceUA_Combat_Feedback[string.upper(msg)]
-  end
 
   local function nameUA(en)
     if not en or en == "" then return en end
