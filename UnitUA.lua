@@ -594,8 +594,37 @@ end)
 -- Легко: лише кілька FontString, без обходу UI
 -- ============================================================
 -- Єдине джерело назв зон: спочатку Zones_Dictionary, Signs — лише якщо немає в Zones
+-- UI-рядки самої рамки мапи (не зони)
+local MAP_UI_UA = {
+  ["Continent"] = "Континент",
+  ["World Zone"] = "Зона світу",
+  ["Zoom Out"] = "Віддалити",
+  ["Right Click On Map To Zoom Out"] = "ПКМ по мапі, щоб віддалити",
+  ["Eastern Kingdoms"] = "Східні королівства",
+  ["Kalimdor"] = "Калімдор",
+}
+
+-- lower→UA кеш (для ELWYNN FOREST / Gold Coast Quarry з іншим регістром)
+local zoneLowerUA = nil
+local function BuildZoneLowerCache()
+  zoneLowerUA = {}
+  local function add(d)
+    if not d then return end
+    local k, v
+    for k, v in pairs(d) do
+      if type(k) == "string" and type(v) == "string" and v ~= "" and v ~= k then
+        zoneLowerUA[string.lower(k)] = v
+      end
+    end
+  end
+  add(OceUA_Zones_Dictionary)
+  add(OceUA_Signs_Dictionary)
+end
+
 local function ZoneLookup(en)
   if not en or en == "" then return nil end
+  if MAP_UI_UA[en] then return MAP_UI_UA[en] end
+
   local function hit(d, k)
     if not d or not k then return nil end
     local ua = d[k]
@@ -609,7 +638,6 @@ local function ZoneLookup(en)
     ua = hit(OceUA_Zones_Dictionary, stripped)
     if ua then return ua end
   end
-  -- Signs_Zone: лише якщо цієї EN-назви НЕМАЄ в Zones (уникаємо дублікатів)
   if not (OceUA_Zones_Dictionary and (OceUA_Zones_Dictionary[en] or (stripped ~= en and OceUA_Zones_Dictionary[stripped]))) then
     ua = hit(OceUA_Signs_Dictionary, en)
     if ua then return ua end
@@ -618,6 +646,12 @@ local function ZoneLookup(en)
       if ua then return ua end
     end
   end
+  -- case-insensitive (ELWYNN FOREST, gold coast quarry)
+  if not zoneLowerUA then BuildZoneLowerCache() end
+  local low = string.lower(en)
+  if zoneLowerUA[low] then return zoneLowerUA[low] end
+  local low2 = string.lower(stripped)
+  if low2 ~= low and zoneLowerUA[low2] then return zoneLowerUA[low2] end
   return nil
 end
 
@@ -642,12 +676,128 @@ end
 
 local function ApplyZoneScreenText()
   if OceUA_IsEnabled and not OceUA_IsEnabled("world") then return end
-  -- великий текст при вході в зону / субзону
   TranslateZoneFS(getglobal("ZoneTextString"))
   TranslateZoneFS(getglobal("SubZoneTextString"))
   TranslateZoneFS(getglobal("PVPinfoTextString"))
-  -- постійний рядок під мінімапою
   TranslateZoneFS(getglobal("MinimapZoneText"))
+end
+
+-- рекурсивний обхід FontString (обмежена глибина) — для WorldMap / Cartographer
+local function WalkTranslateZoneFonts(frame, depth)
+  if not frame or depth > 6 then return end
+  if frame.GetRegions then
+    local ok, regs = pcall(function() return { frame:GetRegions() } end)
+    if ok and regs then
+      local i
+      for i = 1, table.getn(regs) do
+        local r = regs[i]
+        if r and r.GetObjectType then
+          local ot = r:GetObjectType()
+          if ot == "FontString" then
+            TranslateZoneFS(r)
+          end
+        end
+      end
+    end
+  end
+  if frame.GetChildren then
+    local ok, kids = pcall(function() return { frame:GetChildren() } end)
+    if ok and kids then
+      local i
+      for i = 1, table.getn(kids) do
+        WalkTranslateZoneFonts(kids[i], depth + 1)
+      end
+    end
+  end
+end
+
+-- SetText-хук на AreaLabel: клієнт щокадру пише EN → одразу UA
+local function HookMapAreaLabelFS(fs)
+  if not fs or not fs.SetText or fs._OceUA_MapLabelHook then return end
+  fs._OceUA_MapLabelHook = true
+  local old = fs.SetText
+  fs.SetText = function(self, text)
+    if type(text) == "string" and text ~= "" then
+      if not ZoneFSAlreadyUA(text) then
+        local ua = ZoneLookup(text)
+        if ua then text = ua end
+      end
+    end
+    return old(self, text)
+  end
+end
+
+local function ApplyWorldMapZoneText()
+  if OceUA_IsEnabled and not OceUA_IsEnabled("world") then return end
+  local names = {
+    "WorldMapFrameAreaLabel",
+    "WorldMapFrameAreaDescription",
+    "WorldMapFrameTitle",
+    "WorldMapFrameTitleText",
+    "WorldMapZoneDropDownText",
+    "WorldMapContinentDropDownText",
+    "WorldMapZoneMinimapDropDownText",
+    "WorldMapMagnifyingGlassInfo",
+  }
+  -- підчепити AreaLabel / Description назавжди
+  HookMapAreaLabelFS(getglobal("WorldMapFrameAreaLabel"))
+  HookMapAreaLabelFS(getglobal("WorldMapFrameAreaDescription"))
+  local i
+  for i = 1, table.getn(names) do
+    TranslateZoneFS(getglobal(names[i]))
+  end
+  -- dropdown кнопки зон (1.12)
+  for i = 1, 30 do
+    local btn = getglobal("DropDownList1Button" .. i)
+    if btn and btn.GetText then
+      local t = btn:GetText()
+      if t and t ~= "" and not ZoneFSAlreadyUA(t) then
+        local ua = ZoneLookup(t)
+        if ua then btn:SetText(ua) end
+      end
+    end
+    btn = getglobal("DropDownList2Button" .. i)
+    if btn and btn.GetText then
+      local t = btn:GetText()
+      if t and t ~= "" and not ZoneFSAlreadyUA(t) then
+        local ua = ZoneLookup(t)
+        if ua then btn:SetText(ua) end
+      end
+    end
+  end
+  -- повний обхід WorldMapFrame
+  local wmf = getglobal("WorldMapFrame")
+  if wmf and wmf.IsVisible and wmf:IsVisible() then
+    WalkTranslateZoneFonts(wmf, 0)
+    -- знайти і захукати «великий» підпис зони під курсором (AreaLabel)
+    if wmf.GetRegions then
+      local regs = { wmf:GetRegions() }
+      local ri
+      for ri = 1, table.getn(regs) do
+        local r = regs[ri]
+        if r and r.GetObjectType and r:GetObjectType() == "FontString" then
+          HookMapAreaLabelFS(r)
+          TranslateZoneFS(r)
+        end
+      end
+    end
+  end
+  -- Cartographer (Ace2/Ace3) — типові корені
+  local cartNames = {
+    "CartographerFrame", "Cartographer", "CartographerMap",
+    "CartographerNotes", "CartographerLookNFeel", "CartographerCoordinates",
+    "Cartographer_LookNFeel", "Cartographer_Coordinates", "Cartographer_Notes",
+    "CartographerGoTo_Panel",
+  }
+  for i = 1, table.getn(cartNames) do
+    local fr = getglobal(cartNames[i])
+    if fr then WalkTranslateZoneFonts(fr, 0) end
+  end
+  -- окремі відомі FS
+  TranslateZoneFS(getglobal("CartographerLookNFeelOverlayLocationText"))
+  TranslateZoneFS(getglobal("CartographerCoordinatesText"))
+  TranslateZoneFS(getglobal("Cartographer_CoordinatesText"))
+  TranslateZoneFS(getglobal("CartographerLocationText"))
 end
 
 -- throttle: ZONE_CHANGED інколи летить пачкою
@@ -662,6 +812,7 @@ zoneTh:SetScript("OnUpdate", function()
   if zonePend then
     zonePend = false
     pcall(ApplyZoneScreenText)
+    pcall(ApplyWorldMapZoneText)
   end
 end)
 
@@ -680,7 +831,6 @@ zoneEv:SetScript("OnEvent", function()
   ScheduleZoneScreenText()
 end)
 
--- коли клієнт показує ZoneTextFrame — перебити EN одразу в тому ж кадрі
 local function HookZoneTextFrame(name)
   local fr = getglobal(name)
   if not fr or fr._OceUA_ZoneHooked then return end
@@ -692,7 +842,6 @@ local function HookZoneTextFrame(name)
   end)
 end
 
--- Minimap_Update скидає MinimapZoneText на EN
 if type(Minimap_Update) == "function" and not OceUA_MinimapUpdateHooked then
   OceUA_MinimapUpdateHooked = true
   local oldMU = Minimap_Update
@@ -702,23 +851,91 @@ if type(Minimap_Update) == "function" and not OceUA_MinimapUpdateHooked then
   end
 end
 
+-- поки відкрита мапа — періодично підставляти UA (Cartographer часто пише EN знову)
+local mapWatch = CreateFrame("Frame")
+mapWatch:Hide()
+mapWatch.acc = 0
+mapWatch:SetScript("OnUpdate", function()
+  local wmf = getglobal("WorldMapFrame")
+  if not wmf or not wmf.IsVisible or not wmf:IsVisible() then
+    this:Hide()
+    this.acc = 0
+    return
+  end
+  this.acc = this.acc + (arg1 or 0)
+  if this.acc < 0.08 then return end
+  this.acc = 0
+  pcall(ApplyWorldMapZoneText)
+end)
+
+local function HookWorldMapZones()
+  if OceUA_WorldMapZoneHooked then return end
+  OceUA_WorldMapZoneHooked = true
+  local wmf = getglobal("WorldMapFrame")
+  if wmf then
+    local old = wmf:GetScript("OnShow")
+    wmf:SetScript("OnShow", function()
+      if old then old() end
+      ScheduleZoneScreenText()
+      mapWatch.acc = 0
+      mapWatch:Show()
+      pcall(ApplyWorldMapZoneText)
+    end)
+    local oldHide = wmf:GetScript("OnHide")
+    wmf:SetScript("OnHide", function()
+      if oldHide then oldHide() end
+      mapWatch:Hide()
+    end)
+  end
+  -- ванільні оновлення
+  local hooks = {
+    "WorldMapFrame_Update",
+    "WorldMapFrame_UpdateZones",
+    "WorldMapContinents_Update",
+    "WorldMapFrame_SetMapName",
+    "WorldMapZoneDropDown_Update",
+    "WorldMapContinentDropDown_Update",
+  }
+  local hi
+  for hi = 1, table.getn(hooks) do
+    local fname = hooks[hi]
+    if type(getglobal(fname)) == "function" then
+      local key = "_OceUA_" .. fname
+      if not getglobal(key) then
+        setglobal(key, true)
+        local oldF = getglobal(fname)
+        setglobal(fname, function(a1, a2, a3, a4, a5, a6)
+          oldF(a1, a2, a3, a4, a5, a6)
+          pcall(ApplyWorldMapZoneText)
+        end)
+      end
+    end
+  end
+end
+
 local zoneBoot = CreateFrame("Frame")
 zoneBoot:RegisterEvent("PLAYER_LOGIN")
+zoneBoot:RegisterEvent("PLAYER_ENTERING_WORLD")
+zoneBoot:RegisterEvent("WORLD_MAP_UPDATE")
 zoneBoot:SetScript("OnEvent", function()
   HookZoneTextFrame("ZoneTextFrame")
   HookZoneTextFrame("SubZoneTextFrame")
+  HookWorldMapZones()
   ScheduleZoneScreenText()
+  local wmf = getglobal("WorldMapFrame")
+  if wmf and wmf.IsVisible and wmf:IsVisible() then
+    mapWatch:Show()
+    pcall(ApplyWorldMapZoneText)
+  end
 end)
 
--- експорт для інших модулів
 OceUA_ApplyZoneScreenText = ApplyZoneScreenText
+OceUA_ApplyWorldMapZoneText = ApplyWorldMapZoneText
 OceUA_TranslateZoneName = function(en)
   local ua = ZoneLookup(en)
   if ua then return ua end
   return en
 end
-
-
 
 -- ============================================================
 -- TaxiFrame: назви точок з OceUA_Zones_Dictionary
@@ -935,11 +1152,12 @@ end)
 
 
 
+
 -- ============================================================
--- Combat feedback:
---   оригінал EN лишається (клієнт)
---   UA з OceUA_Combat_Feedback — напівпрозорий, над action bars, знизу вгору
---   усі ключі з файлу; нові рядки — лише /reload
+-- Combat feedback (UA шар над action bars)
+--   оригінал EN лишається
+--   кольори близькі до ванільного CombatFeedback
+--   слоти один ЗА одним (не накладаються)
 -- ============================================================
 
 local function CombatLookup(text)
@@ -964,22 +1182,41 @@ local function CombatLookup(text)
   return nil
 end
 
-local function CombatColor(key)
-  local k = string.upper(tostring(key or ""))
-  if k == "HEAL" or k == "ENERGIZE" then return 0.3, 1, 0.3 end
-  if k == "MISS" or k == "DODGE" or k == "PARRY" or k == "BLOCK" or k == "EVADE" then
-    return 1, 1, 1
+-- кольори як у ванільному CombatFeedback_OnCombatEvent
+local function CombatColor(event, flags)
+  local ev = string.upper(tostring(event or ""))
+  local fl = string.upper(tostring(flags or ""))
+  -- крит / crushing — яскраво-червоний
+  if fl == "CRITICAL" or fl == "CRUSHING" or ev == "CRITICAL" or ev == "CRIT" then
+    return 1.0, 0.0, 0.0
   end
-  if k == "IMMUNE" or k == "RESIST" or k == "ABSORB" or k == "DEFLECT" or k == "REFLECT" then
-    return 0.75, 0.75, 1
+  if fl == "GLANCING" then
+    return 1.0, 0.5, 0.0
   end
-  if k == "INTERRUPT" or k == "INTERRUPTED" then return 1, 0.55, 0.2 end
-  if k == "CRITICAL" or k == "CRIT" or k == "CRUSHING" then return 1, 1, 0.35 end
-  return 1, 0.9, 0.35
+  if ev == "HEAL" or ev == "ENERGIZE" then
+    return 0.1, 1.0, 0.1
+  end
+  if ev == "MISS" or ev == "DODGE" or ev == "PARRY" or ev == "BLOCK" or ev == "EVADE"
+      or ev == "IMMUNE" or ev == "DEFLECT" or ev == "REFLECT" then
+    return 1.0, 1.0, 1.0
+  end
+  if ev == "ABSORB" or ev == "RESIST" then
+    return 0.5, 0.5, 1.0
+  end
+  if ev == "INTERRUPT" or ev == "INTERRUPTED" then
+    return 1.0, 0.5, 0.0
+  end
+  -- звичайна рана / шкода
+  if ev == "WOUND" then
+    return 1.0, 0.1, 0.1
+  end
+  return 1.0, 1.0, 1.0
 end
 
-local OCE_FB_BASE = 130
-local OCE_FB_MAX = 10
+-- старт над action bars; крок між слотами, щоб не накладались
+local OCE_FB_BASE = 125
+local OCE_FB_STEP = 30
+local OCE_FB_MAX = 8
 local oceFbPool = {}
 local oceFbIdx = 0
 local OCE_FB_SLOT = 0
@@ -995,28 +1232,29 @@ local function OceFbAcquire()
   local f = oceFbPool[oceFbIdx]
   if not f then
     f = CreateFrame("Frame", "OceUA_CombatFB" .. oceFbIdx, UIParent)
-    f:SetWidth(400)
-    f:SetHeight(40)
+    f:SetWidth(480)
+    f:SetHeight(36)
     f:SetFrameStrata("HIGH")
-    f:SetFrameLevel(50)
+    f:SetFrameLevel(40)
     f.fs = f:CreateFontString(nil, "OVERLAY")
     f.fs:SetPoint("CENTER", f, "CENTER")
     f.fs:SetJustifyH("CENTER")
     local font = GameFontNormalLarge:GetFont()
     if font then f.fs:SetFont(font, 16, "") end
     if f.fs.SetTextHeight then f.fs:SetTextHeight(22) end
-    f.fs:SetShadowColor(0, 0, 0, 0.4)
+    f.fs:SetShadowColor(0, 0, 0, 0.55)
     f.fs:SetShadowOffset(1, -1)
     f:SetScript("OnUpdate", function()
       if not this.active then return end
       local dt = arg1 or 0
       this.t = (this.t or 0) + dt
-      local y = (this.baseY or OCE_FB_BASE) + this.t * 36
+      -- плавний підйом
+      local y = (this.baseY or OCE_FB_BASE) + this.t * 32
       this:ClearAllPoints()
       this:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, y)
-      local a = 0.72
-      if this.t > 1.0 then
-        a = 0.72 * (1 - (this.t - 1.0) / 0.6)
+      local a = 0.85
+      if this.t > 0.9 then
+        a = 0.85 * (1 - (this.t - 0.9) / 0.7)
         if a < 0 then a = 0 end
       end
       this:SetAlpha(a)
@@ -1037,18 +1275,19 @@ local function OceFbShow(text, r, g, b)
   f.active = true
   f.t = 0
   f.fs:SetText(text)
-  f.fs:SetTextColor(r or 1, g or 0.9, b or 0.35)
+  f.fs:SetTextColor(r or 1, g or 1, b or 1)
   local font = GameFontNormalLarge:GetFont()
   if font then f.fs:SetFont(font, 16, "") end
   if f.fs.SetTextHeight then f.fs:SetTextHeight(22) end
-  f.fs:SetShadowColor(0, 0, 0, 0.4)
+  f.fs:SetShadowColor(0, 0, 0, 0.55)
   f.fs:SetShadowOffset(1, -1)
+  -- наступний слот ВИЩЕ попереднього → один за одним
   OCE_FB_SLOT = OCE_FB_SLOT + 1
-  if OCE_FB_SLOT > 6 then OCE_FB_SLOT = 1 end
-  f.baseY = OCE_FB_BASE + (OCE_FB_SLOT - 1) * 8
+  if OCE_FB_SLOT > OCE_FB_MAX then OCE_FB_SLOT = 1 end
+  f.baseY = OCE_FB_BASE + (OCE_FB_SLOT - 1) * OCE_FB_STEP
   f:ClearAllPoints()
   f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, f.baseY)
-  f:SetAlpha(0.72)
+  f:SetAlpha(0.85)
   f:Show()
 end
 
@@ -1077,15 +1316,11 @@ end
 local function ShowCombatUA(event, flags, amount)
   local text = EventToUA(event, flags, amount)
   if not text then return end
-  local r, g, b = CombatColor(event)
-  if flags and string.upper(tostring(flags)) == "CRITICAL" then
-    r, g, b = 1, 1, 0.35
-  end
+  local r, g, b = CombatColor(event, flags)
   OceFbShow(text, r, g, b)
 end
 
 local function HookCombatFeedback()
-  -- НЕ глушимо і НЕ замінюємо оригінал EN
   if type(CombatFeedback_OnCombatEvent) == "function" and not OceUA_CombatFbHooked then
     OceUA_CombatFbHooked = true
     local old = CombatFeedback_OnCombatEvent
@@ -1102,7 +1337,7 @@ local function HookCombatFeedback()
       if type(message) == "string" then
         local ua = CombatLookup(message)
         if ua then
-          local cr, cg, cb = CombatColor(message)
+          local cr, cg, cb = CombatColor(message, nil)
           OceFbShow(ua, cr, cg, cb)
         end
       end
