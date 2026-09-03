@@ -39,7 +39,6 @@ Data\ItemTooltipModules\Flavor_Text.lua
 Data\ItemTooltipModules\Misc_Tooltip_Lines.lua
 Data\ItemTooltipModules\Tooltip_UI_Strings.lua
 Data\ItemTooltipModules\Tool_Names.lua
-Data\ItemTooltipModules\Junk_Test_Entries.lua
 
 ## ---- Profession / holiday / challenges ----
 Data\ProfessionMisc\Profession_Ranks.lua

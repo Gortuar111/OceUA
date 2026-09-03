@@ -17,7 +17,6 @@ OceUA_Reputation_Dictionary = {
   ["Requires Steamwheedle Blood Ring -- Revered"] = "Потрібна репутація з Кривавим Кільцем Хитромудрих — Висока повага",
   ["Requires Bloodsail Buccaneers -- Friendly"] = "Потрібна репутація з Піратами Кривавого Вітрила — Дружба",
   ["Requires Hydraxian Waterlords -- Friendly"] = "Потрібна репутація з Гідраксіанськими Повелителями Вод — Дружба",
-  ["Requires Wintersaber Trainers -- Friendly"] = "Потрібна репутація з Вершниками Зимового Шаблезуба — Дружба",
   ["Requires Bloodsail Buccaneers -- Exalted"] = "Потрібна репутація з Піратами Кривавого Вітрила — Превознесення",
   ["Requires Bloodsail Buccaneers -- Honored"] = "Потрібна репутація з Піратами Кривавого Вітрила — Повага",
   ["Requires Bloodsail Buccaneers -- Neutral"] = "Потрібна репутація з Піратами Кривавого Вітрила — Нейтральність",

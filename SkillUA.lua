@@ -232,7 +232,18 @@ local function SignificantWords(norm)
   end
   return words
 end
+-- Items_Dictionary.lua у старих збірках мав назву таблиці OceUA_Items_Dictionary,
+-- а SkillUA історично очікує OceUA_Item_Dictionary.
+-- Тримаємо обидва імені, щоб назви предметів реально працювали в усіх шляхах UI.
+if not OceUA_Item_Dictionary and OceUA_Items_Dictionary then
+  OceUA_Item_Dictionary = OceUA_Items_Dictionary
+elseif not OceUA_Items_Dictionary and OceUA_Item_Dictionary then
+  OceUA_Items_Dictionary = OceUA_Item_Dictionary
+end
+
 local itemDictUA = {}      -- exact item name → ua (з Items_Dictionary)
+local itemDictLowerUA = {} -- case-insensitive exact item name → ua
+local professionDictLowerUA = {} -- case-insensitive profession name → ua
 local itemDictCount = 0
 local translateCache = {}  -- clean_text -> { translated, ok }
 local cacheCount = 0
@@ -477,12 +488,30 @@ end
 
 local function BuildItemDict()
   itemDictUA = {}
+  itemDictLowerUA = {}
+  professionDictLowerUA = {}
   itemDictCount = 0
-  if not OceUA_Item_Dictionary then return end
-  for eng, ua in pairs(OceUA_Item_Dictionary) do
-    if ua and ua ~= "" and ua ~= eng then
-      itemDictUA[eng] = ua
-      itemDictCount = itemDictCount + 1
+
+  -- Compatibility: source file currently exports plural name.
+  if not OceUA_Item_Dictionary and OceUA_Items_Dictionary then
+    OceUA_Item_Dictionary = OceUA_Items_Dictionary
+  end
+
+  if OceUA_Item_Dictionary then
+    for eng, ua in pairs(OceUA_Item_Dictionary) do
+      if type(eng) == "string" and type(ua) == "string" and ua ~= "" and ua ~= eng then
+        itemDictUA[eng] = ua
+        itemDictLowerUA[string.lower(eng)] = ua
+        itemDictCount = itemDictCount + 1
+      end
+    end
+  end
+
+  if OceUA_Profession_Names then
+    for eng, ua in pairs(OceUA_Profession_Names) do
+      if type(eng) == "string" and type(ua) == "string" and ua ~= "" and ua ~= eng then
+        professionDictLowerUA[string.lower(eng)] = ua
+      end
     end
   end
 end
@@ -722,7 +751,7 @@ function OceUA_SkillStatus()
   local hasSkill = OceSkillUA_Dictionary and true or false
   local hasRec = OceUA_Recipes_Dictionary and true or false
   local hasRep = OceUA_Reputation_Dictionary and true or false
-  local hasItem = OceUA_Item_Dictionary and true or false
+  local hasItem = (OceUA_Item_Dictionary or OceUA_Items_Dictionary) and true or false
   local hasExtra = (OceUA_tooltip_extras or OceUA_pet_teach or OceUA_holiday or OceUA_profession_ranks) and true or false
   return {
     version = VERSION,
@@ -749,18 +778,42 @@ end
 -- Items / Names / Mobs / Objects / Signs / Profession_Names більше не дублюються в Skill_Dictionary.
 local function LookupCategoryExact(ek, clean)
   if not ek or ek == "" then return nil end
+
+  -- 1) Items: найважливіша швидка гілка. Підтримуємо обидві назви таблиці.
+  local itemDict = OceUA_Item_Dictionary or OceUA_Items_Dictionary
+  if itemDict then
+    local ua = itemDict[clean] or itemDict[ek]
+    if ua and ua ~= "" and ua ~= clean then return ua end
+    if itemDictLowerUA then
+      ua = itemDictLowerUA[string.lower(clean)] or itemDictLowerUA[string.lower(ek)]
+      if ua and ua ~= "" then return ua end
+    end
+  end
+
   local function hit(dict)
     if not dict then return nil end
     local ua = dict[clean] or dict[ek]
     if ua and ua ~= "" and ua ~= clean then return ua end
+    local lk = string.lower(clean)
+    for k, v in pairs(dict) do
+      if type(k) == "string" and type(v) == "string" and string.lower(k) == lk and v ~= "" and v ~= clean then
+        return v
+      end
+    end
     return nil
   end
+
   local ua
-  ua = hit(OceUA_Item_Dictionary); if ua then return ua end
   ua = hit(OceUA_NPC_Names_Dictionary); if ua then return ua end
   ua = hit(OceUA_Mobs_Dictionary); if ua then return ua end
   ua = hit(OceUA_Objects_Dictionary); if ua then return ua end
   ua = hit(OceUA_Signs_Dictionary); if ua then return ua end
+
+  -- Професії використовуються окремо в тренері, TradeSkill і Character UI.
+  if professionDictLowerUA then
+    ua = professionDictLowerUA[string.lower(clean)] or professionDictLowerUA[string.lower(ek)]
+    if ua and ua ~= "" then return ua end
+  end
   ua = hit(OceUA_Profession_Names); if ua then return ua end
   return nil
 end
@@ -1558,7 +1611,7 @@ TranslateItemLine = function(text)
 
   -- Armor N / N Armor
   local _, _, arm = string.find(clean, "^(%d+) Armor$")
-  if arm then return arm .. " Броні", true end
+  if arm then return arm .. " Броня", true end
   local _, _, arm2 = string.find(clean, "^Armor: (%d+)$")
   if arm2 then return "Броня: " .. arm2, true end
 
@@ -1685,14 +1738,6 @@ TranslateItemLine = function(text)
   local _, _, pct2, what2 = string.find(clean, "^%+(%d+%.?%d*)%% chance to (.+)$")
   if pct2 and what2 then
     local map = {
-      ["parry"] = "парирувати",
-      ["dodge"] = "ухилитися",
-      ["block"] = "заблокувати",
-      ["hit"] = "влучити",
-      ["crit"] = "критичний удар",
-      ["critical strike"] = "критичний удар",
-      ["critical hit"] = "критичний удар",
-      ["resist"] = "опір",
     }
     local w = map[string.lower(what2)]
     if w then return "+" .. pct2 .. "% шанс " .. w, true end
@@ -2977,7 +3022,6 @@ local CHAR_UI_UA = {
   ["Spirit:"] = "Дух:",
   ["Spirit"] = "Дух",
   ["Armor:"] = "Броня:",
-  ["Armor"] = "Броня",
   ["Melee Attack"] = "Ближній бій",
   ["Ranged Attack"] = "Дальній бій",
   ["Power:"] = "Потужність:",
@@ -3015,8 +3059,6 @@ local CHAR_UI_UA = {
   ["Weapon Skills"] = "Навички зброї",
   ["Armor Skills"] = "Навички броні",
   ["Languages"] = "Мови",
-  ["All"] = "Усі",
-  ["Close"] = "Закрити",
   -- Weapon / skill names
   ["Axes"] = "Сокири",
   ["Swords"] = "Мечі",
@@ -3025,13 +3067,11 @@ local CHAR_UI_UA = {
   ["Bows"] = "Луки",
   ["Crossbows"] = "Арбалети",
   ["Guns"] = "Рушниці",
-  ["Thrown"] = "Метальна",
   ["Staves"] = "Посохи",
   ["Polearms"] = "Дібрівна",
   ["Fist Weapons"] = "Кулачна зброя",
   ["Wands"] = "Жезли",
   ["Unarmed"] = "Без зброї",
-  ["Defense"] = "Захист",
   ["Beast Mastery"] = "Влада над звірами",
   ["Marksmanship"] = "Стрільба",
   ["Survival"] = "Виживання",
@@ -3041,7 +3081,6 @@ local CHAR_UI_UA = {
   ["Holy"] = "Світло",
   ["Discipline"] = "Дисципліна",
   ["Shadow"] = "Тінь",
-  ["Elemental"] = "Стихія",
   ["Enhancement"] = "Вдосконалення",
   ["Restoration"] = "Відновлення",
   ["Affliction"] = "Страждання",
@@ -3928,15 +3967,21 @@ local function LookupItemUA(en)
   en = string.gsub(en, "%s+$", "")
   if en == "" then return nil end
   if HasCyrillic(en) then return nil end
-  local dict = OceUA_Item_Dictionary
+  local dict = OceUA_Item_Dictionary or OceUA_Items_Dictionary
   if not dict then return nil end
   local ua = dict[en]
+  if (not ua or ua == "") and itemDictLowerUA then
+    ua = itemDictLowerUA[string.lower(en)]
+  end
   if ua and ua ~= "" and ua ~= en then return ua end
   -- без суфіксу кількості "x2" / "(2)"
   local base = string.gsub(en, "%s*[xX×]%s*%d+%s*$", "")
   base = string.gsub(base, "%s*%(%d+%)%s*$", "")
   if base ~= en then
     ua = dict[base]
+    if (not ua or ua == "") and itemDictLowerUA then
+      ua = itemDictLowerUA[string.lower(base)]
+    end
     if ua and ua ~= "" then return ua end
   end
   return nil
@@ -4337,9 +4382,10 @@ end
 -- ============================================================
 local function LookupItemName(en)
   if not en or en == "" then return nil end
-  if OceUA_Item_Dictionary and OceUA_Item_Dictionary[en] then return OceUA_Item_Dictionary[en] end
+  local dict = OceUA_Item_Dictionary or OceUA_Items_Dictionary
+  if dict and dict[en] then return dict[en] end
   if itemDictUA and itemDictUA[en] then return itemDictUA[en] end
-  if OceUA_Items_Dictionary and OceUA_Items_Dictionary[en] then return OceUA_Items_Dictionary[en] end
+  if itemDictLowerUA then return itemDictLowerUA[string.lower(en)] end
   return nil
 end
 

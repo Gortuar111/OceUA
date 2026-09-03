@@ -3,7 +3,7 @@
   Святкові здібності / телепорти (Lunar Festival тощо).
 
   Логіка: точний збіг повного англ. рядка зі словником.
-  ["Holiday - Lunar Teleport Cap: Stormwind"] = "…"
+  ["Holiday - Lunar Teleport Cap: Stormwind"] = "Свято — Ліміт телепортації за місячним календарем: Штормовій"
 
   НЕ сюди: звичайні скіли → Data/Skill_Dictionary.lua
   Після правок: /reload
@@ -16,13 +16,12 @@ OceUA_holiday = {
   ["Holiday - Lunar Teleport Cap: Darnassus"] = "Свято — Ліміт телепортації за місячним календарем: Дарнассус",
   ["Holiday - Lunar Teleport Cap: Ironforge"] = "Свято — Ліміт телепортації за місячним календарем: Айронфордж",
   ["Holiday - Lunar Teleport Cap: Orgrimmar"] = "Свято — Ліміт телепортації за місячним календарем: Оргриммар",
-  ["Holiday - Lunar Teleport Cap: Stormwind"] = "Свято — Ліміт телепортації за місячним календарем: Штормвінд",
   ["Holiday - Lunar Teleport Cap: Thunderbluff"] = "Свято — Місячний телепорт: Громовий Утвір",
   ["Holiday - Lunar Teleport Cap: Undercity"] = "Свято — Ліміт телепортації за місячним календарем: Підмісто",
   ["Holiday - Lunar Teleport: Darnassus"] = "Свято — Місячний телепорт: Дарнассус",
   ["Holiday - Lunar Teleport: Ironforge"] = "Свято — Місячний телепорт: Айронфордж",
   ["Holiday - Lunar Teleport: Orgrimmar"] = "Свято — Місячний телепорт: Оргримар",
-  ["Holiday - Lunar Teleport: Stormwind"] = "Свято — Місячний телепорт: Штормвінд",
+  ["Holiday - Lunar Teleport: Stormwind"] = "Свято — Місячний телепорт: Штормовій",
   ["Holiday - Lunar Teleport: Thunderbluff"] = "Свято — Місячний телепорт: Громовий Утвір",
   ["Holiday - Lunar Teleport: Undercity"] = "Свято — Місячний телепорт: Підмісто",
   ["Holiday - Midsummer, Remove Bonfire"] = "Свято — Літнє сонцестояння, розпалювання багаття",

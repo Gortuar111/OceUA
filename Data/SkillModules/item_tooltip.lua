@@ -135,7 +135,7 @@ OceUA_ITEM_FIXED = {
   -- prompts
   ["<Right Click to Read>"] = "<Клацніть ПКМ, щоб прочитати>",
   ["<Right Click to Open>"] = "<Клацніть ПКМ, щоб відкрити>",
-  ["Equip:"] = "Екіпірування:",
+  ["Equip:"] = "Носити:",
   ["Use:"] = "Використання:",
   ["Chance on hit:"] = "Шанс при ударі:",
   ["Chance on Hit:"] = "Шанс при ударі:",
@@ -173,7 +173,7 @@ OceUA_ITEM_TYPE = {
   ["Gun"] = "Рушниця",
   ["Crossbow"] = "Арбалет",
   ["Wand"] = "Жезл",
-  ["Thrown"] = "Метальна",
+  ["Thrown"] = "Метальна зброя",
   ["Shield"] = "Щит",
   -- relics
   ["Idol"] = "Ідол",
@@ -220,12 +220,6 @@ OceUA_ITEM_EQUIP = {
   ["Held In Off-hand"] = "Тримається в лівій руці",
   ["Ranged"] = "Далекий бій",
   ["Relic"] = "Реліквія",
-  ["Gun"] = "Рушниця",
-  ["Wand"] = "Жезл",
-  ["Crossbow"] = "Арбалет",
-  ["Thrown"] = "Метальна зброя",
-  ["Shield"] = "Щит",
-  ["Projectile"] = "Снаряд",
 }
 
 -- Тимчасові зачарування зброї (зелений рядок)
@@ -424,7 +418,6 @@ OceUA_ITEM_REQUIRE = {
   ["Requires Blacksmith Hammer"] = "Потрібен ковальський молот",
   ["Requires Skinning Knife"] = "Потрібен ніж для зняття шкур",
   ["Requires Mining Pick"] = "Потрібна кирка",
-  ["Requires Shields"] = "Потрібні щити",
 }
 
 -- Інструменти / станції професій (для парсера "Requires: A, B")
@@ -470,11 +463,9 @@ OceUA_ITEM_TOOL = {
   ["Stealth"] = "непомітність",
   ["Melee Weapon"] = "зброя ближнього бою",
   ["Ranged Weapon"] = "зброя дальнього бою",
-  ["Shield"] = "щит",
   ["Shields"] = "щити",
   ["Outdoors"] = "просто неба",
   ["Wands"] = "жезли",
-  ["Wand"] = "жезл",
   ["Bows"] = "луки",
   ["Guns"] = "рушниці",
   ["Crossbows"] = "арбалети",
@@ -492,7 +483,7 @@ OceUA_ITEM_TOOL = {
   ["Two-Handed Axes"] = "дворучні сокири",
   ["Two-Handed Maces"] = "дворучні булави",
   ["Throwing Weapons"] = "метальна зброя",
-  ["Fishing Pole"] = "вудка",
+  ["Fishing Pole"] = "Вудка",
   ["Fishing Poles"] = "вудка",
 
   -- додаткові інструменти / фокуси
@@ -502,9 +493,6 @@ OceUA_ITEM_TOOL = {
   ["Virtuoso Inking Set"] = "Набір віртуозного письма",
   ["Jeweler's Kit"] = "Набір ювеліра",
   ["Simple Grinder"] = "Проста точилка",
-  ["Mining Pick"] = "Кирка",
-  ["Skinning Knife"] = "Ніж для зняття шкур",
-  ["Fishing Pole"] = "Вудка",
   ["Bright Baubles"] = "Яскраві блешні",
   ["Aquadynamic Fish Attractor"] = "Аквадинамічний атрактор",
   ["Shiny Bauble"] = "Блискуча блешня",

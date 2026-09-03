@@ -1,0 +1,14 @@
+OceUA item/profession hotfix - 2026-09-03
+
+Root cause:
+Items_Dictionary.lua exports OceUA_Items_Dictionary (plural), while SkillUA.lua was reading OceUA_Item_Dictionary (singular). As a result the large item-name dictionary was loaded but never reached the item lookup paths.
+
+Fixes:
+- Added compatibility alias between OceUA_Items_Dictionary and OceUA_Item_Dictionary.
+- BuildItemDict now indexes all item names case-insensitively.
+- Loot, merchant, auction, bank, tooltip and generic item-name lookup paths use the indexed item dictionary.
+- Profession names are also indexed case-insensitively for trainer, TradeSkill, character and error-message paths.
+- Existing Ukrainian translations were not replaced.
+
+Expected after /reload:
+/oceskill status should report a non-zero item count (the supplied Items_Dictionary contains about 19.8k translated entries).
