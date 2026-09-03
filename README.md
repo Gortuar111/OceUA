@@ -20,3 +20,5 @@ OceUA - представляє собою аддон, який переклад�
 є окремі налаштування та корисні фічі
 
 Гарної гри!)
+
+[![Downloads](https://img.shields.io/github/downloads/Gortuar111/OceUA/total?style=flat-square&logo=github&color=blue)](https://github.com/Gortuar111/OceUA/releases)
