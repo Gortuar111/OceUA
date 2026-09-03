@@ -3,6 +3,8 @@
   ============================================================
   СЮДИ: ТІЛЬКИ імена унікальних / дружніх / квестових NPC
         (квестодавці, вендори, тренери, вартові з іменами тощо).
+		
+  \"
 
   Формат:
     ["Marshal McBride"] = "Маршал Макбрайд",
@@ -3625,10 +3627,6 @@ OceUA_NPC_Names_Dictionary = {
   ["Laird"] = "Лейрд",
   ["Lairn"] = "Лерн",
   ["Lulu"] = "Лулу",
-  ["Lake Creeper"] = "Озеро Кріпер",
-  ["Lake Frenzy"] = "Озеро Френзі",
-  ["Lake Skulker"] = "Озеро Скулкер",
-  ["Lake Thresher"] = "Озеро Трешер",
   ["Lakeshire Guard"] = "Лейкширська гвардія",
   ["Lakota Windsong"] = "Лакота Віндсонг",
   ["Lalina Summermoon"] = "Лаліна Саммермун",
@@ -3890,7 +3888,7 @@ OceUA_NPC_Names_Dictionary = {
   ["Lysta Bancroft"] = "Ліста Бенкрофт",
   ["Ma Stonefield"] = "Ма Стоунфілд",
   ["Ma'ruk Wyrmscale"] = "Ма'рук Вирмскейл",
-  ["Mabel Solaj"] = "Мебель Солай",
+  ["Mabel Solaj"] = "Мейбел Солай",
   ["Macey Jinglepocket"] = "Мейсі Джинглпокет",
   ["Mad Magglish"] = "Божевільний Маггліш",
   ["Mad Scientist"] = "Божевільний вчений",
@@ -5136,7 +5134,7 @@ OceUA_NPC_Names_Dictionary = {
   ["Rema Schneider"] = "Рема Шнайдер",
   ["Remains of a Paladin"] = "Останки паладина",
   ["Remen Marcot"] = "Ремен Маркот",
-  ["Remy \"Two Times\""] = "Ремі Двічі",
+  ["Remy \"Two Times\""] = "Ремі \"Двічі\"",
   ["Renataki"] = "Ренатакі",
   ["Renato Gallina"] = "Ренато Галліна",
   ["Rendow"] = "Рендоу",
@@ -6022,7 +6020,6 @@ OceUA_NPC_Names_Dictionary = {
   ["Stewpot"] = "Каструля",
   ["Stitched Horror"] = "Зшитий жах",
   ["Stitched Spewer"] = "Зшитий Спьюер",
-  ["Stitches"] = "Шви",
   ["Stockade Archer"] = "Лучник у фортеці",
   ["Stockade Guard"] = "Охоронець форту",
   ["Stoley"] = "Столі",
@@ -7378,6 +7375,18 @@ OceUA_NPC_Names_Dictionary = {
   ["Essie Zoya"] = "Ессі Зоя",
   ["Isabella Locksley"] = "Ізабелла Локслі",
   ["Sailor Brewen"] = "Сейлор Брюен",
+  ["Nat"] = "Нат",
+  ["Kitty"] = "Кицюня",
+  ["Yorus Barleybrew"] = "Йорус Барлібрю",
+  ["Calor"] = "Калор",
+  [""] = "",
+  [""] = "",
+  [""] = "",
+  [""] = "",
+  [""] = "",
+  [""] = "",
+  [""] = "",
+  [""] = "",
   [""] = "",
   [""] = "",
   [""] = "",

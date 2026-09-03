@@ -1,5 +1,5 @@
 --[[
-  OceUA / Skill module v3.2.0
+  OceUA / Skill module v3.2.1
   Переклад скілів / бафів / тренера / професій
   OctoWoW / TurtleWoW (1.12)
 
@@ -25,7 +25,7 @@
 ]]
 
 local ADDON_NAME = "OceUA"
-local VERSION = "3.2.0"
+local VERSION = "3.2.1"
 
 -- налаштування скілів
 -- з 1.2.0 основне джерело — OceUA_Settings (/oceua);
@@ -1500,6 +1500,8 @@ TranslateItemLine = function(text)
   -- +N Stat  /  +N% Something
   local _, _, sign, num, rest = string.find(clean, "^([%+%-])(%d+%.?%d*)%s+(.+)$")
   if sign and num and rest then
+    rest = string.gsub(rest, "[%.%:%,%;]+$", "")
+    rest = string.gsub(rest, "%s+$", "")
     local statUa = ITEM_STAT_UA[rest]
     if statUa then
       -- "+12 Stamina" → "+12 до витривалості"
@@ -1829,14 +1831,29 @@ TranslateItemLine = function(text)
   local _, _, dps2 = string.find(clean, "^(%d+%.?%d*) damage per second$")
   if dps2 then return dps2 .. " шкоди на секунду", true end
 
-  -- Equip:/Use:/Chance on hit: prefix + rest (rest may be translated by dict later)
+  -- Equip:/Use:/Chance on hit: prefix + rest
   local _, _, prefix, body = string.find(clean, "^(Equip:|Use:|Chance on hit:|Chance on Hit:)%s*(.*)$")
   if prefix then
     local pUa = ITEM_FIXED_UA[prefix] or prefix
     if body and body ~= "" then
+      body = string.gsub(body, "%s+$", "")
+      body = string.gsub(body, "[%.]+$", "")
+      -- +N Stat (Equip: +6 Attack Power)
+      local _, _, sign, num, rest = string.find(body, "^([%+%-])(%d+%.?%d*)%s+(.+)$")
+      if sign and num and rest then
+        rest = string.gsub(rest, "[%.%:%,%;]+$", "")
+        rest = string.gsub(rest, "%s+$", "")
+        local statUa = ITEM_STAT_UA[rest]
+        if statUa then
+          if string.find(statUa, "^до ") then
+            return pUa .. " " .. sign .. num .. " " .. statUa, true
+          end
+          return pUa .. " " .. sign .. num .. " " .. statUa, true
+        end
+      end
       local bodyUa, ok = TranslateText(body)
       if ok then return pUa .. " " .. bodyUa, true end
-      return pUa .. " " .. body, true  -- хоча б префікс
+      return pUa .. " " .. body, true
     end
     return pUa, true
   end
@@ -4184,6 +4201,11 @@ local function HookUIErrors()
   if oldAdd then
     UIErrorsFrame.AddMessage = function(self, msg, r, g, b, a)
       if type(msg) == "string" then
+        -- спам клієнта при зміні зони / втраті mouseover
+        local low = string.lower(msg)
+        if string.find(low, "unknown unit", 1, true) then
+          return
+        end
         local allow = true
         if OceUA_IsEnabled then
           allow = OceUA_IsEnabled("skill") or OceUA_IsEnabled("quest") or OceUA_IsEnabled("world") or OceUA_IsEnabled("item")
