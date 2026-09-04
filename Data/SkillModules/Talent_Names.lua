@@ -1,0 +1,60 @@
+--[[
+  OceUA — Talent_Names.lua
+  ============================================================
+  СЮДИ: назви конкретних талантів.
+
+  Виділено з колишнього talents.lua.
+  Після правок: /reload
+]]
+
+OceUA_Talent_Names = {
+  ["Anticipation"] = "Передчуття",
+  ["Axe Specialization"] = "Спеціалізація на сокирах",
+  ["Blood Craze"] = "Криваве шаленство",
+  ["Bloodthirst"] = "Кровожерливість",
+  ["Booming Voice"] = "Гулкий голос",
+  ["Concussion Blow"] = "Оглушливий удар",
+  ["Cruelty"] = "Жорстокість",
+  ["Death Wish"] = "Жага смерті",
+  ["Deep Wounds"] = "Глибокі рани",
+  ["Defiance"] = "Виклик",
+  ["Dual Wield Specialization"] = "Спеціалізація на двох зброях",
+  ["Enrage"] = "Лють",
+  ["Flurry"] = "Шквал",
+  ["Impale"] = "Пронизування",
+  ["Improved Battle Shout"] = "Покращений «Бойовий крик»",
+  ["Improved Berserker Rage"] = "Покращена «Лють берсерка»",
+  ["Improved Bloodrage"] = "Покращена «Кривава лють»",
+  ["Improved Charge"] = "Покращений «Ривок»",
+  ["Improved Cleave"] = "Покращене «Розсічення»",
+  ["Improved Demoralizing Shout"] = "Покращений «Деморалізуючий крик»",
+  ["Improved Disarm"] = "Покращене «Роззброєння»",
+  ["Improved Execute"] = "Покращене «Страта»",
+  ["Improved Hamstring"] = "Покращене «Підсікання»",
+  ["Improved Heroic Strike"] = "Покращений «Героїчний удар»",
+  ["Improved Intercept"] = "Покращене «Перехоплення»",
+  ["Improved Mortal Strike"] = "Покращений «Смертельний удар»",
+  ["Improved Overpower"] = "Покращене «Перевага»",
+  ["Improved Rend"] = "Покращене «Розривання»",
+  ["Improved Revenge"] = "Покращена «Помста»",
+  ["Improved Shield Bash"] = "Покращений «Удар щитом»",
+  ["Improved Shield Block"] = "Покращений «Блок щитом»",
+  ["Improved Shield Wall"] = "Покращена «Стіна щитів»",
+  ["Improved Slam"] = "Покращений «Міцний удар»",
+  ["Improved Sunder Armor"] = "Покращене «Розкол броні»",
+  ["Improved Taunt"] = "Покращене «Провокація»",
+  ["Improved Thunder Clap"] = "Покращений «Гул грому»",
+  ["Iron Will"] = "Залізна воля",
+  ["Last Stand"] = "Останній рубіж",
+  ["Mace Specialization"] = "Спеціалізація на булавах",
+  ["Master Strike"] = "Майстерний удар",
+  ["One-Handed Weapon Specialization"] = "Спеціалізація на одноручній зброї",
+  ["Piercing Howl"] = "Пронизливий вий",
+  ["Poleaxe Specialization"] = "Спеціалізація на держаковій зброї",
+  ["Shield Slam"] = "Трощення щитом",
+  ["Shield Specialization"] = "Спеціалізація на щитах",
+  ["Sword Specialization"] = "Спеціалізація на мечах",
+  ["Toughness"] = "Міць",
+  ["Two-Handed Weapon Specialization"] = "Спеціалізація на дворучній зброї",
+  ["Unbridled Wrath"] = "Нестримний гнів",
+}

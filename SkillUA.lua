@@ -1,5 +1,5 @@
 --[[
-  OceUA / Skill module v3.2.1
+  OceUA / Skill module v3.2.2 (code 3.0.0 + modern data)
   Переклад скілів / бафів / тренера / професій
   OctoWoW / TurtleWoW (1.12)
 
@@ -25,7 +25,7 @@
 ]]
 
 local ADDON_NAME = "OceUA"
-local VERSION = "3.2.1"
+local VERSION = "3.2.2"
 
 -- налаштування скілів
 -- з 1.2.0 основне джерело — OceUA_Settings (/oceua);
@@ -232,18 +232,7 @@ local function SignificantWords(norm)
   end
   return words
 end
--- Items_Dictionary.lua у старих збірках мав назву таблиці OceUA_Items_Dictionary,
--- а SkillUA історично очікує OceUA_Item_Dictionary.
--- Тримаємо обидва імені, щоб назви предметів реально працювали в усіх шляхах UI.
-if not OceUA_Item_Dictionary and OceUA_Items_Dictionary then
-  OceUA_Item_Dictionary = OceUA_Items_Dictionary
-elseif not OceUA_Items_Dictionary and OceUA_Item_Dictionary then
-  OceUA_Items_Dictionary = OceUA_Item_Dictionary
-end
-
 local itemDictUA = {}      -- exact item name → ua (з Items_Dictionary)
-local itemDictLowerUA = {} -- case-insensitive exact item name → ua
-local professionDictLowerUA = {} -- case-insensitive profession name → ua
 local itemDictCount = 0
 local translateCache = {}  -- clean_text -> { translated, ok }
 local cacheCount = 0
@@ -488,30 +477,13 @@ end
 
 local function BuildItemDict()
   itemDictUA = {}
-  itemDictLowerUA = {}
-  professionDictLowerUA = {}
   itemDictCount = 0
-
-  -- Compatibility: source file currently exports plural name.
-  if not OceUA_Item_Dictionary and OceUA_Items_Dictionary then
-    OceUA_Item_Dictionary = OceUA_Items_Dictionary
-  end
-
-  if OceUA_Item_Dictionary then
-    for eng, ua in pairs(OceUA_Item_Dictionary) do
-      if type(eng) == "string" and type(ua) == "string" and ua ~= "" and ua ~= eng then
-        itemDictUA[eng] = ua
-        itemDictLowerUA[string.lower(eng)] = ua
-        itemDictCount = itemDictCount + 1
-      end
-    end
-  end
-
-  if OceUA_Profession_Names then
-    for eng, ua in pairs(OceUA_Profession_Names) do
-      if type(eng) == "string" and type(ua) == "string" and ua ~= "" and ua ~= eng then
-        professionDictLowerUA[string.lower(eng)] = ua
-      end
+  local src = OceUA_Item_Dictionary or OceUA_Items_Dictionary
+  if not src then return end
+  for eng, ua in pairs(src) do
+    if ua and ua ~= "" and ua ~= eng then
+      itemDictUA[eng] = ua
+      itemDictCount = itemDictCount + 1
     end
   end
 end
@@ -778,42 +750,18 @@ end
 -- Items / Names / Mobs / Objects / Signs / Profession_Names більше не дублюються в Skill_Dictionary.
 local function LookupCategoryExact(ek, clean)
   if not ek or ek == "" then return nil end
-
-  -- 1) Items: найважливіша швидка гілка. Підтримуємо обидві назви таблиці.
-  local itemDict = OceUA_Item_Dictionary or OceUA_Items_Dictionary
-  if itemDict then
-    local ua = itemDict[clean] or itemDict[ek]
-    if ua and ua ~= "" and ua ~= clean then return ua end
-    if itemDictLowerUA then
-      ua = itemDictLowerUA[string.lower(clean)] or itemDictLowerUA[string.lower(ek)]
-      if ua and ua ~= "" then return ua end
-    end
-  end
-
   local function hit(dict)
     if not dict then return nil end
     local ua = dict[clean] or dict[ek]
     if ua and ua ~= "" and ua ~= clean then return ua end
-    local lk = string.lower(clean)
-    for k, v in pairs(dict) do
-      if type(k) == "string" and type(v) == "string" and string.lower(k) == lk and v ~= "" and v ~= clean then
-        return v
-      end
-    end
     return nil
   end
-
   local ua
+  ua = hit(OceUA_Item_Dictionary); if ua then return ua end
   ua = hit(OceUA_NPC_Names_Dictionary); if ua then return ua end
   ua = hit(OceUA_Mobs_Dictionary); if ua then return ua end
   ua = hit(OceUA_Objects_Dictionary); if ua then return ua end
   ua = hit(OceUA_Signs_Dictionary); if ua then return ua end
-
-  -- Професії використовуються окремо в тренері, TradeSkill і Character UI.
-  if professionDictLowerUA then
-    ua = professionDictLowerUA[string.lower(clean)] or professionDictLowerUA[string.lower(ek)]
-    if ua and ua ~= "" then return ua end
-  end
   ua = hit(OceUA_Profession_Names); if ua then return ua end
   return nil
 end
@@ -1553,8 +1501,6 @@ TranslateItemLine = function(text)
   -- +N Stat  /  +N% Something
   local _, _, sign, num, rest = string.find(clean, "^([%+%-])(%d+%.?%d*)%s+(.+)$")
   if sign and num and rest then
-    rest = string.gsub(rest, "[%.%:%,%;]+$", "")
-    rest = string.gsub(rest, "%s+$", "")
     local statUa = ITEM_STAT_UA[rest]
     if statUa then
       -- "+12 Stamina" → "+12 до витривалості"
@@ -1611,7 +1557,7 @@ TranslateItemLine = function(text)
 
   -- Armor N / N Armor
   local _, _, arm = string.find(clean, "^(%d+) Armor$")
-  if arm then return arm .. " Броня", true end
+  if arm then return arm .. " Броні", true end
   local _, _, arm2 = string.find(clean, "^Armor: (%d+)$")
   if arm2 then return "Броня: " .. arm2, true end
 
@@ -1648,6 +1594,27 @@ TranslateItemLine = function(text)
   if dmg1 then return dmg1 .. " - " .. dmg2 .. " Шкоди", true end
   local _, _, dmg = string.find(clean, "^(%d+%.?%d*) Damage$")
   if dmg then return dmg .. " Шкоди", true end
+
+  -- N - M School Damage / N School Damage
+  do
+    local schoolMap = {
+      ["Holy"] = "шкоди світлом",
+      ["Fire"] = "шкоди вогнем",
+      ["Frost"] = "шкоди кригою",
+      ["Nature"] = "шкоди природою",
+      ["Shadow"] = "шкоди тінню",
+      ["Arcane"] = "шкоди тайною магією",
+      ["Physical"] = "фізичної шкоди",
+    }
+    local _, _, d1, d2, sch = string.find(clean, "^(%d+%.?%d*)%s*%-%s*(%d+%.?%d*)%s+(%a+) Damage$")
+    if d1 and sch and schoolMap[sch] then
+      return d1 .. " - " .. d2 .. " " .. schoolMap[sch], true
+    end
+    local _, _, d0, sch0 = string.find(clean, "^(%d+%.?%d*)%s+(%a+) Damage$")
+    if d0 and sch0 and schoolMap[sch0] then
+      return d0 .. " " .. schoolMap[sch0], true
+    end
+  end
 
   -- N Charges / Stack of N / N sec / N min
   local _, _, ch = string.find(clean, "^(%d+) Charges?$")
@@ -1738,6 +1705,14 @@ TranslateItemLine = function(text)
   local _, _, pct2, what2 = string.find(clean, "^%+(%d+%.?%d*)%% chance to (.+)$")
   if pct2 and what2 then
     local map = {
+      ["parry"] = "парирувати",
+      ["dodge"] = "ухилитися",
+      ["block"] = "заблокувати",
+      ["hit"] = "влучити",
+      ["crit"] = "критичний удар",
+      ["critical strike"] = "критичний удар",
+      ["critical hit"] = "критичний удар",
+      ["resist"] = "опір",
     }
     local w = map[string.lower(what2)]
     if w then return "+" .. pct2 .. "% шанс " .. w, true end
@@ -1876,29 +1851,14 @@ TranslateItemLine = function(text)
   local _, _, dps2 = string.find(clean, "^(%d+%.?%d*) damage per second$")
   if dps2 then return dps2 .. " шкоди на секунду", true end
 
-  -- Equip:/Use:/Chance on hit: prefix + rest
+  -- Equip:/Use:/Chance on hit: prefix + rest (rest may be translated by dict later)
   local _, _, prefix, body = string.find(clean, "^(Equip:|Use:|Chance on hit:|Chance on Hit:)%s*(.*)$")
   if prefix then
     local pUa = ITEM_FIXED_UA[prefix] or prefix
     if body and body ~= "" then
-      body = string.gsub(body, "%s+$", "")
-      body = string.gsub(body, "[%.]+$", "")
-      -- +N Stat (Equip: +6 Attack Power)
-      local _, _, sign, num, rest = string.find(body, "^([%+%-])(%d+%.?%d*)%s+(.+)$")
-      if sign and num and rest then
-        rest = string.gsub(rest, "[%.%:%,%;]+$", "")
-        rest = string.gsub(rest, "%s+$", "")
-        local statUa = ITEM_STAT_UA[rest]
-        if statUa then
-          if string.find(statUa, "^до ") then
-            return pUa .. " " .. sign .. num .. " " .. statUa, true
-          end
-          return pUa .. " " .. sign .. num .. " " .. statUa, true
-        end
-      end
       local bodyUa, ok = TranslateText(body)
       if ok then return pUa .. " " .. bodyUa, true end
-      return pUa .. " " .. body, true
+      return pUa .. " " .. body, true  -- хоча б префікс
     end
     return pUa, true
   end
@@ -3022,6 +2982,7 @@ local CHAR_UI_UA = {
   ["Spirit:"] = "Дух:",
   ["Spirit"] = "Дух",
   ["Armor:"] = "Броня:",
+  ["Armor"] = "Броня",
   ["Melee Attack"] = "Ближній бій",
   ["Ranged Attack"] = "Дальній бій",
   ["Power:"] = "Потужність:",
@@ -3059,6 +3020,8 @@ local CHAR_UI_UA = {
   ["Weapon Skills"] = "Навички зброї",
   ["Armor Skills"] = "Навички броні",
   ["Languages"] = "Мови",
+  ["All"] = "Усі",
+  ["Close"] = "Закрити",
   -- Weapon / skill names
   ["Axes"] = "Сокири",
   ["Swords"] = "Мечі",
@@ -3067,11 +3030,13 @@ local CHAR_UI_UA = {
   ["Bows"] = "Луки",
   ["Crossbows"] = "Арбалети",
   ["Guns"] = "Рушниці",
+  ["Thrown"] = "Метальна",
   ["Staves"] = "Посохи",
   ["Polearms"] = "Дібрівна",
   ["Fist Weapons"] = "Кулачна зброя",
   ["Wands"] = "Жезли",
   ["Unarmed"] = "Без зброї",
+  ["Defense"] = "Захист",
   ["Beast Mastery"] = "Влада над звірами",
   ["Marksmanship"] = "Стрільба",
   ["Survival"] = "Виживання",
@@ -3081,6 +3046,7 @@ local CHAR_UI_UA = {
   ["Holy"] = "Світло",
   ["Discipline"] = "Дисципліна",
   ["Shadow"] = "Тінь",
+  ["Elemental"] = "Стихія",
   ["Enhancement"] = "Вдосконалення",
   ["Restoration"] = "Відновлення",
   ["Affliction"] = "Страждання",
@@ -3967,21 +3933,15 @@ local function LookupItemUA(en)
   en = string.gsub(en, "%s+$", "")
   if en == "" then return nil end
   if HasCyrillic(en) then return nil end
-  local dict = OceUA_Item_Dictionary or OceUA_Items_Dictionary
+  local dict = OceUA_Item_Dictionary
   if not dict then return nil end
   local ua = dict[en]
-  if (not ua or ua == "") and itemDictLowerUA then
-    ua = itemDictLowerUA[string.lower(en)]
-  end
   if ua and ua ~= "" and ua ~= en then return ua end
   -- без суфіксу кількості "x2" / "(2)"
   local base = string.gsub(en, "%s*[xX×]%s*%d+%s*$", "")
   base = string.gsub(base, "%s*%(%d+%)%s*$", "")
   if base ~= en then
     ua = dict[base]
-    if (not ua or ua == "") and itemDictLowerUA then
-      ua = itemDictLowerUA[string.lower(base)]
-    end
     if ua and ua ~= "" then return ua end
   end
   return nil
@@ -4099,6 +4059,12 @@ end
 -- UIErrorsFrame: skill-up / learn messages (без миготіння — переклад у момент AddMessage)
 local function TranslateErrorMessage(msg)
   if not msg or msg == "" or HasCyrillic(msg) then return msg end
+  if OceUA_Combat_Feedback and OceUA_Combat_Feedback[msg] then
+    return OceUA_Combat_Feedback[msg]
+  end
+  if OceUA_Combat_Feedback and OceUA_Combat_Feedback[string.upper(msg)] then
+    return OceUA_Combat_Feedback[string.upper(msg)]
+  end
 
   local function nameUA(en)
     if not en or en == "" then return en end
@@ -4246,11 +4212,6 @@ local function HookUIErrors()
   if oldAdd then
     UIErrorsFrame.AddMessage = function(self, msg, r, g, b, a)
       if type(msg) == "string" then
-        -- спам клієнта при зміні зони / втраті mouseover
-        local low = string.lower(msg)
-        if string.find(low, "unknown unit", 1, true) then
-          return
-        end
         local allow = true
         if OceUA_IsEnabled then
           allow = OceUA_IsEnabled("skill") or OceUA_IsEnabled("quest") or OceUA_IsEnabled("world") or OceUA_IsEnabled("item")
@@ -4382,10 +4343,9 @@ end
 -- ============================================================
 local function LookupItemName(en)
   if not en or en == "" then return nil end
-  local dict = OceUA_Item_Dictionary or OceUA_Items_Dictionary
-  if dict and dict[en] then return dict[en] end
+  if OceUA_Item_Dictionary and OceUA_Item_Dictionary[en] then return OceUA_Item_Dictionary[en] end
   if itemDictUA and itemDictUA[en] then return itemDictUA[en] end
-  if itemDictLowerUA then return itemDictLowerUA[string.lower(en)] end
+  if OceUA_Items_Dictionary and OceUA_Items_Dictionary[en] then return OceUA_Items_Dictionary[en] end
   return nil
 end
 

@@ -1123,8 +1123,11 @@ local function HookAddMessageFrame(fr)
   if not fr or fr._OceUA_MsgHooked or not fr.AddMessage then return end
   fr._OceUA_MsgHooked = true
   local old = fr.AddMessage
-  fr.AddMessage = function(self, msg, r, g, b, a)
+  fr.AddMessage = function(self, msg, r, g, b, a, ...)
     if type(msg) == "string" then
+      if string.find(string.lower(msg), "unknown unit", 1, true) then
+        return
+      end
       msg = TranslateScreenMsg(msg)
     end
     if old then
@@ -1138,4 +1141,224 @@ screenBoot:RegisterEvent("PLAYER_LOGIN")
 screenBoot:SetScript("OnEvent", function()
   HookAddMessageFrame(getglobal("RaidWarningFrame"))
   HookAddMessageFrame(getglobal("RaidBossEmoteFrame"))
+  HookAddMessageFrame(getglobal("CombatText"))
+  HookAddMessageFrame(getglobal("FloatingCombatText"))
 end)
+
+
+
+
+
+
+
+
+
+
+
+-- ============================================================
+-- Combat feedback:
+--   оригінал EN лишається (клієнт)
+--   UA з OceUA_Combat_Feedback — напівпрозорий, над action bars, знизу вгору
+--   усі ключі з файлу; нові рядки — лише /reload
+-- ============================================================
+
+local function CombatLookup(text)
+  if not text or text == "" then return nil end
+  if string.find(text, "^[%d%s%+%-%.]+$") then return nil end
+  local db = OceUA_Combat_Feedback
+  if type(db) ~= "table" then return nil end
+  if db[text] then return db[text] end
+  local up = string.upper(text)
+  if db[up] then return db[up] end
+  local low = string.lower(text)
+  if db[low] then return db[low] end
+  local _, _, head, rest = string.find(text, "^([%a]+)%s*(.*)$")
+  if head then
+    local ua = db[head] or db[string.upper(head)] or db[string.lower(head)]
+    if ua then
+      rest = string.gsub(rest or "", "^%s+", "")
+      if rest ~= "" then return ua .. " " .. rest end
+      return ua
+    end
+  end
+  return nil
+end
+
+local function CombatColor(key)
+  local k = string.upper(tostring(key or ""))
+  if k == "HEAL" or k == "ENERGIZE" then return 0.3, 1, 0.3 end
+  if k == "MISS" or k == "DODGE" or k == "PARRY" or k == "BLOCK" or k == "EVADE" then
+    return 1, 1, 1
+  end
+  if k == "IMMUNE" or k == "RESIST" or k == "ABSORB" or k == "DEFLECT" or k == "REFLECT" then
+    return 0.75, 0.75, 1
+  end
+  if k == "INTERRUPT" or k == "INTERRUPTED" then return 1, 0.55, 0.2 end
+  if k == "CRITICAL" or k == "CRIT" or k == "CRUSHING" then return 1, 1, 0.35 end
+  return 1, 0.9, 0.35
+end
+
+local OCE_FB_BASE = 130
+local OCE_FB_MAX = 10
+local oceFbPool = {}
+local oceFbIdx = 0
+local OCE_FB_SLOT = 0
+
+local function OceFbAcquire()
+  local i
+  for i = 1, OCE_FB_MAX do
+    local f = oceFbPool[i]
+    if f and not f.active then return f end
+  end
+  oceFbIdx = oceFbIdx + 1
+  if oceFbIdx > OCE_FB_MAX then oceFbIdx = 1 end
+  local f = oceFbPool[oceFbIdx]
+  if not f then
+    f = CreateFrame("Frame", "OceUA_CombatFB" .. oceFbIdx, UIParent)
+    f:SetWidth(400)
+    f:SetHeight(40)
+    f:SetFrameStrata("HIGH")
+    f:SetFrameLevel(50)
+    f.fs = f:CreateFontString(nil, "OVERLAY")
+    f.fs:SetPoint("CENTER", f, "CENTER")
+    f.fs:SetJustifyH("CENTER")
+    local font = GameFontNormalLarge:GetFont()
+    if font then f.fs:SetFont(font, 16, "") end
+    if f.fs.SetTextHeight then f.fs:SetTextHeight(22) end
+    f.fs:SetShadowColor(0, 0, 0, 0.4)
+    f.fs:SetShadowOffset(1, -1)
+    f:SetScript("OnUpdate", function()
+      if not this.active then return end
+      local dt = arg1 or 0
+      this.t = (this.t or 0) + dt
+      local y = (this.baseY or OCE_FB_BASE) + this.t * 36
+      this:ClearAllPoints()
+      this:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, y)
+      local a = 0.72
+      if this.t > 1.0 then
+        a = 0.72 * (1 - (this.t - 1.0) / 0.6)
+        if a < 0 then a = 0 end
+      end
+      this:SetAlpha(a)
+      if this.t >= 1.6 then
+        this.active = false
+        this:Hide()
+      end
+    end)
+    oceFbPool[oceFbIdx] = f
+  end
+  return f
+end
+
+local function OceFbShow(text, r, g, b)
+  if not text or text == "" then return end
+  local f = OceFbAcquire()
+  if not f then return end
+  f.active = true
+  f.t = 0
+  f.fs:SetText(text)
+  f.fs:SetTextColor(r or 1, g or 0.9, b or 0.35)
+  local font = GameFontNormalLarge:GetFont()
+  if font then f.fs:SetFont(font, 16, "") end
+  if f.fs.SetTextHeight then f.fs:SetTextHeight(22) end
+  f.fs:SetShadowColor(0, 0, 0, 0.4)
+  f.fs:SetShadowOffset(1, -1)
+  OCE_FB_SLOT = OCE_FB_SLOT + 1
+  if OCE_FB_SLOT > 6 then OCE_FB_SLOT = 1 end
+  f.baseY = OCE_FB_BASE + (OCE_FB_SLOT - 1) * 8
+  f:ClearAllPoints()
+  f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, f.baseY)
+  f:SetAlpha(0.72)
+  f:Show()
+end
+
+local function EventToUA(event, flags, amount)
+  local parts = {}
+  local function add(en)
+    if not en or en == "" or en == "nil" then return end
+    local ua = CombatLookup(tostring(en))
+    if ua then parts[table.getn(parts) + 1] = ua end
+  end
+  event = tostring(event or "")
+  flags = tostring(flags or "")
+  if event ~= "" and event ~= "WOUND" and event ~= "HEAL" and event ~= "ENERGIZE" then
+    add(event)
+  end
+  if flags ~= "" and flags ~= "nil" then
+    add(flags)
+  end
+  if table.getn(parts) == 0 then return nil end
+  local out = parts[1]
+  local i
+  for i = 2, table.getn(parts) do out = out .. " " .. parts[i] end
+  return out
+end
+
+local function ShowCombatUA(event, flags, amount)
+  local text = EventToUA(event, flags, amount)
+  if not text then return end
+  local r, g, b = CombatColor(event)
+  if flags and string.upper(tostring(flags)) == "CRITICAL" then
+    r, g, b = 1, 1, 0.35
+  end
+  OceFbShow(text, r, g, b)
+end
+
+local function HookCombatFeedback()
+  -- НЕ глушимо і НЕ замінюємо оригінал EN
+  if type(CombatFeedback_OnCombatEvent) == "function" and not OceUA_CombatFbHooked then
+    OceUA_CombatFbHooked = true
+    local old = CombatFeedback_OnCombatEvent
+    CombatFeedback_OnCombatEvent = function(event, flags, amount, school)
+      if old then old(event, flags, amount, school) end
+      ShowCombatUA(event, flags, amount)
+    end
+  end
+  if type(CombatText_AddMessage) == "function" and not OceUA_CombatTextAddHooked then
+    OceUA_CombatTextAddHooked = true
+    local oldAdd = CombatText_AddMessage
+    CombatText_AddMessage = function(message, a2, a3, a4, a5, a6, a7)
+      local r = oldAdd(message, a2, a3, a4, a5, a6, a7)
+      if type(message) == "string" then
+        local ua = CombatLookup(message)
+        if ua then
+          local cr, cg, cb = CombatColor(message)
+          OceFbShow(ua, cr, cg, cb)
+        end
+      end
+      return r
+    end
+  end
+  local ue = getglobal("UIErrorsFrame")
+  if ue and ue.AddMessage and not ue._OceUA_CombatErr then
+    ue._OceUA_CombatErr = true
+    local old = ue.AddMessage
+    ue.AddMessage = function(self, text, r, g, b, a)
+      if type(text) == "string" then
+        -- клієнтський спам при despawn юнітів (часто 3× підряд під час бігу)
+        local low = string.lower(text)
+        if string.find(low, "unknown unit", 1, true) then
+          return
+        end
+        local ua = CombatLookup(text)
+        if ua then text = ua end
+      end
+      return old(self, text, r, g, b, a)
+    end
+  end
+end
+
+local combatEv = CreateFrame("Frame")
+combatEv:RegisterEvent("PLAYER_LOGIN")
+combatEv:RegisterEvent("PLAYER_ENTERING_WORLD")
+combatEv:RegisterEvent("UNIT_COMBAT")
+combatEv:SetScript("OnEvent", function()
+  if event == "UNIT_COMBAT" then
+    if arg1 == "player" or arg1 == "target" or arg1 == "pet" then
+      ShowCombatUA(arg2, arg3, arg4)
+    end
+  else
+    HookCombatFeedback()
+  end
+end)
+HookCombatFeedback()

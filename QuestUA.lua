@@ -832,6 +832,19 @@ local function TranslateDetail()
     if tr.T then SafeSetText(QuestTitleText, tr.T) end
     if tr.D then SafeSetText(QuestDescription, tr.D) end
     if tr.O then SafeSetText(QuestObjectiveText, tr.O) end
+    -- нагороди в деталях квесту (якщо є кнопки)
+    local ri
+    for ri = 1, 10 do
+        local nameFS = getglobal("QuestDetailItem" .. ri .. "Name")
+        if not nameFS then nameFS = getglobal("QuestItem" .. ri .. "Name") end
+        if nameFS and nameFS.GetText then
+            local iname = nameFS:GetText()
+            if iname and iname ~= "" and not string.find(iname, "[А-Яа-яІіЇїЄєҐґ]") then
+                local ua = LookupWorldName(iname)
+                if ua then nameFS:SetText(ua) end
+            end
+        end
+    end
 end
 
 local function TranslateProgress()
@@ -866,6 +879,26 @@ local function TranslateReward()
     if not tr then return end
     if tr.T then SafeSetText(QuestRewardTitleText, tr.T) end
     if tr.C then SafeSetText(QuestRewardText, tr.C) end
+    -- назви предметів-нагород (кнопки QuestRewardItem / QuestItem)
+    local ri
+    for ri = 1, 10 do
+        local names = {
+            "QuestRewardItem" .. ri .. "Name",
+            "QuestItem" .. ri .. "Name",
+            "QuestInfoRewardsFrameQuestInfoItem" .. ri .. "Name",
+        }
+        local ni
+        for ni = 1, table.getn(names) do
+            local nameFS = getglobal(names[ni])
+            if nameFS and nameFS.GetText then
+                local iname = nameFS:GetText()
+                if iname and iname ~= "" and not string.find(iname, "[А-Яа-яІіЇїЄєҐґ]") then
+                    local ua = LookupWorldName(iname)
+                    if ua then nameFS:SetText(ua) end
+                end
+            end
+        end
+    end
 end
 
 local function RefreshCurrent()
@@ -1136,7 +1169,9 @@ local function LookupWorldName(en)
     en = string.gsub(en, "^%s+", "")
     en = string.gsub(en, "%s+$", "")
     local d
-    d = OceUA_Item_Dictionary
+    d = OceUA_Item_Dictionary or OceUA_Items_Dictionary
+    if d and d[en] and d[en] ~= "" then return d[en] end
+    d = OceUA_Recipes_Dictionary
     if d and d[en] and d[en] ~= "" then return d[en] end
     d = OceUA_Mobs_Dictionary
     if d and d[en] and d[en] ~= "" then return d[en] end
@@ -1149,7 +1184,7 @@ local function LookupWorldName(en)
     -- часткова заміна відомих назв у довгих цілях (Go to the top of X)
     if string.len(en) > 24 then
         local best, bestLen, bestUA = nil, 0, nil
-        local dicts = { OceUA_Objects_Dictionary, OceUA_Mobs_Dictionary, OceUA_Item_Dictionary, OceUA_NPC_Names_Dictionary }
+        local dicts = { OceUA_Objects_Dictionary, OceUA_Mobs_Dictionary, OceUA_Item_Dictionary or OceUA_Items_Dictionary, OceUA_NPC_Names_Dictionary }
         local di
         for di = 1, table.getn(dicts) do
             local dict = dicts[di]

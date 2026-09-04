@@ -2,7 +2,7 @@
 ## Title: |cffb266ffOce|rUA
 ## Notes: UA-переклади: квести, діалоги, книги, скіли, предмети | /oceua
 ## Author: Oce
-## Version: 3.2.1
+## Version: 3.2.2
 ## DefaultState: enabled
 ## SavedVariables: OceUA_Settings, OceBookUA_Settings, OceBookUA_Pending, OceGossipUA_Settings, OceGossipUA_Pending, OceQuestUA_Settings
 
@@ -39,6 +39,7 @@ Data\ItemTooltipModules\Flavor_Text.lua
 Data\ItemTooltipModules\Misc_Tooltip_Lines.lua
 Data\ItemTooltipModules\Tooltip_UI_Strings.lua
 Data\ItemTooltipModules\Tool_Names.lua
+Data\ItemTooltipModules\Junk_Test_Entries.lua
 
 ## ---- Profession / holiday / challenges ----
 Data\ProfessionMisc\Profession_Ranks.lua
@@ -72,5 +73,6 @@ BookUA.lua
 GossipUA.lua
 QuestUA.lua
 SkillUA.lua
+Data\Combat_Feedback.lua
 UnitUA.lua
 NameplateUA.lua
