@@ -18,6 +18,7 @@ OceUA_Settings = OceUA_Settings or {
     skillShowID  = false,
     showOriginal = true,
     nameplates   = true,
+    craft        = true,
     bookFontSize = 13,
     minimapPos   = 220,
 }
@@ -47,6 +48,7 @@ function OceUA_IsEnabled(module)
     if module == "book"   then return S.book ~= false end
     if module == "skill"  then return S.skill ~= false end
     if module == "nameplates" then return S.nameplates == true end
+    if module == "craft" then return S.craft ~= false end
     if module == "world"  then return true end
     return true
 end
@@ -410,6 +412,7 @@ MakeCheck(panelMain, "book",         "Книги / листи",             3)
 MakeCheck(panelMain, "skill",        "Скіли / предмети",          4)
 MakeCheck(panelMain, "showOriginal", "EN-назва під UA у тултіпі", 5)
 MakeCheck(panelMain, "nameplates",   "Підписи UA над мобами (неймплейти)", 6)
+MakeCheck(panelMain, "craft",        "Мітка «Предмет для крафту»", 7)
 
 -- ========== Panel: Трекер (вікно квестів під мінімапою) ==========
 local function ApplyTrackerCfg()
@@ -578,6 +581,7 @@ MakeStyledButton(panelTools, "Статус", x3, -8, B3, function()
         .. (S.enabled and "|cff00ff00ON|r" or "|cffff4040OFF|r")
         .. "  quest=" .. tostring(S.quest ~= false)
         .. " gossip=" .. tostring(S.gossip ~= false)
+        .. " craft=" .. tostring(S.craft ~= false)
         .. " book=" .. tostring(S.book ~= false)
         .. " skill=" .. tostring(S.skill ~= false))
 end, "Статус модулів у чат")
@@ -585,6 +589,11 @@ end, "Статус модулів у чат")
 MakeStyledButton(panelTools, "/reload UI", x1, -34, 90, function()
     ReloadUI()
 end, "Повний ReloadUI() клієнта")
+
+MakeStyledButton(panelTools, "Очистити dump", x2, -34, 100, function()
+    OceGossipUA_Pending = {}
+    DEFAULT_CHAT_FRAME:AddMessage("|cffb266ffOce|rUA: список dump діалогів очищено")
+end, "Очистити список неперекладених діалогів (/ogua clear)")
 
 local sepTools = panelTools:CreateTexture(nil, "ARTWORK")
 sepTools:SetTexture("Interface\\Buttons\\WHITE8X8")
@@ -647,6 +656,7 @@ local COMMANDS = {
     { "/oqua count",        "Квести: статистика бази", true },
     { "/ogua toggle",       "Діалоги: UA ↔ EN", true },
     { "/ogua count",        "Діалоги: статистика", true },
+    { "/ogua clear",        "Діалоги: очистити dump-список", true },
     { "/ocebook",           "Книги: довідка / статус", true },
 }
 
@@ -913,6 +923,7 @@ boot:SetScript("OnEvent", function()
         if S.skillShowID == nil then S.skillShowID = false end
         if S.showOriginal == nil then S.showOriginal = true end
         if S.nameplates == nil then S.nameplates = true end
+        if S.craft == nil then S.craft = true end
         if S.bookFontSize == nil then S.bookFontSize = 13 end
         if S.minimapPos == nil then S.minimapPos = 220 end
         MigrateOldSettings()

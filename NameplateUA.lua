@@ -1,14 +1,23 @@
 --[[
-  OceUA — заміна EN→UA на неймплейтах (простий режим)
-  Без окремих вікон — лише підміна тексту (стабільно, без миготіння).
+  OceUA — неймплейти EN→UA (оптимізовано)
+  Рідший повний скан WorldFrame + реєстр відомих плейтів.
   /oceanp on|off|toggle|debug
 ]]
 
 local cache = {}
 local debugMode = false
 local debugCD = 0
-local scanAcc = 0
+
+-- відомі фрейми плейтів (оновлюємо повним сканом рідко)
+local known = {}
+local knownN = 0
+local fullAcc = 0
+local quickAcc = 0
 local targetAcc = 0
+
+local FULL_INTERVAL  = 1.20  -- повний обхід WorldFrame
+local QUICK_INTERVAL = 0.35  -- лише відомі плейти
+local TARGET_INTERVAL = 0.25
 
 local function Enabled()
   if OceUA_IsEnabled then
@@ -49,9 +58,10 @@ end
 local function TranslateText(tx)
   tx = Strip(tx)
   if not tx or tx == "" then return nil end
-  -- вже українською
+  -- вже схоже на кирилицю
   if string.find(tx, "[А-Яа-яІіЇїЄєҐґ]") then return nil end
-  if string.len(tx) < 2 or string.len(tx) > 70 then return nil end
+  local len = string.len(tx)
+  if len < 2 or len > 70 then return nil end
   if string.find(tx, "^%d") or string.find(tx, "%%") then return nil end
   if string.find(tx, "^Level") then return nil end
 
@@ -77,46 +87,74 @@ local function TrySetUA(fs)
   return true
 end
 
-local function ForEachFontString(frame, depth, fn)
-  if not frame or depth > 5 then return end
-  if frame.GetRegions then
-    local regs = { frame:GetRegions() }
-    local i
-    for i = 1, table.getn(regs) do
-      local r = regs[i]
-      if r and r.GetObjectType and r:GetObjectType() == "FontString" then
-        fn(r)
-      end
+local function ProcessPlate(frame)
+  if not frame or not frame.GetRegions then return 0 end
+  local hits = 0
+  local regs = { frame:GetRegions() }
+  local i
+  for i = 1, table.getn(regs) do
+    local r = regs[i]
+    if r and r.GetObjectType and r:GetObjectType() == "FontString" then
+      if TrySetUA(r) then hits = hits + 1 end
     end
   end
+  -- один рівень дітей (без глибокої рекурсії)
   if frame.GetChildren then
     local kids = { frame:GetChildren() }
-    local i
     for i = 1, table.getn(kids) do
-      ForEachFontString(kids[i], depth + 1, fn)
+      local ch = kids[i]
+      if ch and ch.GetRegions then
+        local r2 = { ch:GetRegions() }
+        local j
+        for j = 1, table.getn(r2) do
+          local r = r2[j]
+          if r and r.GetObjectType and r:GetObjectType() == "FontString" then
+            if TrySetUA(r) then hits = hits + 1 end
+          end
+        end
+      end
     end
   end
+  return hits
 end
 
-local function ScanNameplates()
+local function IsLikelyNameplate(fr)
+  if not fr or not fr.IsVisible or not fr:IsVisible() then return false end
+  local nm = fr.GetName and fr:GetName()
+  if nm and nm ~= "" then
+    local low = string.lower(nm)
+    if string.find(low, "nameplate", 1, true) then return true end
+    -- іменовані UI-фрейми не чіпаємо
+    return false
+  end
+  -- без імені — кандидат (класичні плейти часто без GetName)
+  return true
+end
+
+local function FullScan()
   if not WorldFrame then return 0 end
+  known = {}
+  knownN = 0
   local children = { WorldFrame:GetChildren() }
-  local i, hits = 1, 0
+  local hits, i = 0, 1
   for i = 1, table.getn(children) do
     local fr = children[i]
+    if IsLikelyNameplate(fr) then
+      knownN = knownN + 1
+      known[knownN] = fr
+      hits = hits + ProcessPlate(fr)
+    end
+  end
+  return hits
+end
+
+local function QuickScan()
+  local hits, i = 0, 1
+  local n = knownN
+  for i = 1, n do
+    local fr = known[i]
     if fr and fr.IsVisible and fr:IsVisible() then
-      local nm = fr.GetName and fr:GetName()
-      local ok = false
-      if not nm or nm == "" then
-        ok = true
-      elseif string.find(string.lower(nm), "nameplate") then
-        ok = true
-      end
-      if ok then
-        ForEachFontString(fr, 0, function(fs)
-          if TrySetUA(fs) then hits = hits + 1 end
-        end)
-      end
+      hits = hits + ProcessPlate(fr)
     end
   end
   return hits
@@ -137,9 +175,6 @@ local function TranslateTargetFrame()
     local fs = getglobal(TARGET_FS[i])
     if fs then TrySetUA(fs) end
   end
-  if TargetFrame then
-    ForEachFontString(TargetFrame, 0, function(fs) TrySetUA(fs) end)
-  end
 end
 
 local driver = CreateFrame("Frame")
@@ -149,23 +184,38 @@ driver:SetScript("OnEvent", function()
 end)
 
 driver:SetScript("OnUpdate", function()
-  if not Enabled() then return end
+  if not Enabled() then
+    -- майже нічого не робимо, коли модуль вимкнено
+    return
+  end
+
   targetAcc = targetAcc + arg1
-  if targetAcc >= 0.08 then
+  if targetAcc >= TARGET_INTERVAL then
     targetAcc = 0
     pcall(TranslateTargetFrame)
   end
-  scanAcc = scanAcc + arg1
-  if scanAcc >= 0.08 then
-    scanAcc = 0
+
+  fullAcc = fullAcc + arg1
+  if fullAcc >= FULL_INTERVAL then
+    fullAcc = 0
+    quickAcc = 0
     local hits = 0
-    pcall(function() hits = ScanNameplates() end)
+    pcall(function() hits = FullScan() end)
     if debugMode then
       debugCD = debugCD + 1
-      if debugCD >= 20 then
+      if debugCD >= 5 then
         debugCD = 0
-        DEFAULT_CHAT_FRAME:AddMessage("|cffb266ffOce|rNP hits=" .. hits)
+        DEFAULT_CHAT_FRAME:AddMessage("|cffb266ffOce|rNP full hits=" .. hits .. " plates=" .. knownN)
       end
+    end
+    return
+  end
+
+  quickAcc = quickAcc + arg1
+  if quickAcc >= QUICK_INTERVAL then
+    quickAcc = 0
+    if knownN > 0 then
+      pcall(QuickScan)
     end
   end
 end)
@@ -188,17 +238,15 @@ SlashCmdList["OCENAMEPLATE"] = function(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cffb266ffOce|rUA неймплейти: |cff00ff00ON|r")
   elseif msg == "off" then
     OceUA_Settings.nameplates = false
-    DEFAULT_CHAT_FRAME:AddMessage("|cffb266ffOce|rUA неймплейти: |cffff4040OFF|r")
+    DEFAULT_CHAT_FRAME:AddMessage("|cffb266ffOce|rUA неймплейти: |cffff0000OFF|r")
   elseif msg == "toggle" then
-    OceUA_Settings.nameplates = not OceUA_Settings.nameplates
+    OceUA_Settings.nameplates = not (OceUA_Settings.nameplates == true)
     DEFAULT_CHAT_FRAME:AddMessage("|cffb266ffOce|rUA неймплейти: " ..
-      (OceUA_Settings.nameplates and "|cff00ff00ON|r" or "|cffff4040OFF|r"))
+      (OceUA_Settings.nameplates and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
   elseif msg == "debug" then
     debugMode = not debugMode
-    DEFAULT_CHAT_FRAME:AddMessage("|cffb266ffOce|rUA NP debug: " .. (debugMode and "ON" or "OFF"))
+    DEFAULT_CHAT_FRAME:AddMessage("|cffb266ffOce|rNP debug: " .. (debugMode and "ON" or "OFF"))
   else
-    DEFAULT_CHAT_FRAME:AddMessage("|cffb266ffOce|rUA неймплейти: " ..
-      ((OceUA_Settings.nameplates and "|cff00ff00ON|r") or "|cffff4040OFF|r") ..
-      "  /oceanp on|off|toggle|debug")
+    DEFAULT_CHAT_FRAME:AddMessage("|cffb266ffOce|rNP: /oceanp on|off|toggle|debug")
   end
 end

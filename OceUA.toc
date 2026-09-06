@@ -2,7 +2,7 @@
 ## Title: |cffb266ffOce|rUA
 ## Notes: UA-переклади: квести, діалоги, книги, скіли, предмети | /oceua
 ## Author: Oce
-## Version: 3.3.2
+## Version: 3.3.4
 ## DefaultState: enabled
 ## SavedVariables: OceUA_Settings, OceBookUA_Settings, OceBookUA_Pending, OceGossipUA_Settings, OceGossipUA_Pending, OceQuestUA_Settings
 
@@ -18,6 +18,7 @@ Data\Aura_Descriptions.lua
 Data\Recipes_Dictionary.lua
 Data\Reputation_Dictionary.lua
 Data\Items_Dictionary.lua
+Data\Craft_Reagents.lua
 
 ## ---- NPC / моби / об'єкти (дані, без окремих тумблерів) ----
 Data\Names_npc.lua
@@ -73,6 +74,7 @@ BookUA.lua
 GossipUA.lua
 QuestUA.lua
 SkillUA.lua
+CraftUA.lua
 Data\Combat_Feedback.lua
 UnitUA.lua
 NameplateUA.lua

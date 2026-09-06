@@ -3869,7 +3869,7 @@ tipWatcher.elapsed = 0
 tipWatcher:SetScript("OnUpdate", function()
   -- ~10 разів/сек достатньо, менше навантаження ніж кожен кадр
   tipWatcher.elapsed = (tipWatcher.elapsed or 0) + (arg1 or 0.03)
-  if tipWatcher.elapsed < 0.40 then return end
+  if tipWatcher.elapsed < 0.55 then return end
   tipWatcher.elapsed = 0
   if not SkillEnabled() then return end
   -- у бою рідше чіпати тултіп (FPS)
