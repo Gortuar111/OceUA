@@ -811,6 +811,8 @@ local function SafeSetText(fs, text)
     end
 end
 
+local LookupWorldName  -- forward (використовується в TranslateDetail/Reward)
+
 local function TranslateDetail()
     if OceUA_IsEnabled and not OceUA_IsEnabled("quest") then return end
     local title = GetTitleText and GetTitleText() or nil
@@ -840,7 +842,7 @@ local function TranslateDetail()
         if nameFS and nameFS.GetText then
             local iname = nameFS:GetText()
             if iname and iname ~= "" and not string.find(iname, "[А-Яа-яІіЇїЄєҐґ]") then
-                local ua = LookupWorldName(iname)
+                local ua = LookupWorldName and LookupWorldName(iname) or nil
                 if ua then nameFS:SetText(ua) end
             end
         end
@@ -893,7 +895,7 @@ local function TranslateReward()
             if nameFS and nameFS.GetText then
                 local iname = nameFS:GetText()
                 if iname and iname ~= "" and not string.find(iname, "[А-Яа-яІіЇїЄєҐґ]") then
-                    local ua = LookupWorldName(iname)
+                    local ua = LookupWorldName and LookupWorldName(iname) or nil
                     if ua then nameFS:SetText(ua) end
                 end
             end
@@ -1164,7 +1166,7 @@ local function TranslateLogTag(s)
 end
 
 -- пошук UA для фрагмента (моб / предмет / NPC / об'єкт)
-local function LookupWorldName(en)
+LookupWorldName = function(en)
     if not en or en == "" then return nil end
     en = string.gsub(en, "^%s+", "")
     en = string.gsub(en, "%s+$", "")
@@ -1358,7 +1360,7 @@ local function TranslateQuestLogDetails()
             if nameFS then
                 local iname = nameFS:GetText()
                 if iname and not string.find(iname, "[А-Яа-яІіЇїЄєҐґ]") then
-                    local ua = LookupWorldName(iname)
+                    local ua = LookupWorldName and LookupWorldName(iname) or nil
                     if ua then nameFS:SetText(ua) end
                 end
             end

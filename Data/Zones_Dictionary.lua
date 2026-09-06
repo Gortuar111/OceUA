@@ -370,6 +370,7 @@ OceUA_Zones_Dictionary = {
   ["Ironclad Prison"] = "Тюрма «Айронклад»",  -- 515
   ["Irondeep Mine"] = "Шахта «Айрондіп»",  -- 2957
   ["Ironforge"] = "Айронфордж",  -- 1537
+  ["Ironforge Airfields"] = "Аеродроми Айронфордж",
   ["Ironstone Camp"] = "Табір «Айронстоун»",  -- 3037
   ["Ironstone Plateau"] = "Плато Айронстоун",  -- 1943
   ["Irontree Cavern"] = "Печера Айронтрі",  -- 1768
@@ -981,6 +982,27 @@ OceUA_Zones_Dictionary = {
   ["Gartside Plot"] = "Ділянка Гартсайда",
   ["Scarlet Raven Tavern"] = "Таверна «Скарлет Рейвен»",
   ["Elwynn Forest"] = "Елвіннський ліс",
+  ["Stonefield Farm"] = "Ферма «Стоунфілд»",  -- 63
+  ["Maclure Vineyards"] = "Виноградники «Маклур»",  -- 64
+  ["Alah'Thalas"] = "Ала'Талас",
+  ["Blackstone Island"] = "Чорнокам'яний острів",
+  ["Thalassian Highlands"] = "Талассійське нагір'я",
+  ["Northwind"] = "Північний вітер",
+  ["Balor"] = "Балор",
+  ["Grim Reaches"] = "Похмурі кряжі",
+  ["Gilneas"] = "Гілнеас",
+  ["Lapidis Isle"] = "Острів Лапідіса",
+  ["Tel'Abim"] = "Тел'Абім",
+  ["Vault of Ironforge"] = "Скарбниця Айронфорджа",
+  ["Gol'Bolar Quarry Mine"] = "Кар’єр «Гол’Болар»",
+  ["Royal Library"] = "Королівська бібліотека",
+  ["Little Silvermoon"] = "Маленька Срібна Місячина",
+  ["Champion's Hall"] = "Зал чемпіонів",
+  [""] = "",
+  [""] = "",
+  [""] = "",
+  [""] = "",
+  [""] = "",
 }
 
 -- Сміттєві / UNUSED (опційно, можна лишити порожніми)
